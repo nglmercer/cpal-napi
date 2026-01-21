@@ -46,12 +46,8 @@ impl AudioDevice {
                 cpal::DeviceDirection::Output => crate::device_description::DeviceDirection::Output,
                 _ => crate::device_description::DeviceDirection::Output,
             },
-            device_type: match desc.device_type() {
-                _ => crate::device_description::DeviceType::Other,
-            },
-            interface_type: match desc.interface_type() {
-                _ => crate::device_description::InterfaceType::Other,
-            },
+            device_type: crate::device_description::DeviceType::Other,
+            interface_type: crate::device_description::InterfaceType::Other,
         })
     }
 

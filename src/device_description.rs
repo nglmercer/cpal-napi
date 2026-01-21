@@ -47,6 +47,12 @@ pub struct DeviceDescriptionBuilder {
     interface_type: Option<InterfaceType>,
 }
 
+impl Default for DeviceDescriptionBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[napi]
 impl DeviceDescriptionBuilder {
     #[napi(constructor)]

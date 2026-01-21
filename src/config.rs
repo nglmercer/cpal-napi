@@ -69,7 +69,7 @@ impl From<cpal::SupportedStreamConfigRange> for SupportedStreamConfig {
             channels: c.channels(),
             min_sample_rate: c.min_sample_rate(),
             max_sample_rate: c.max_sample_rate(),
-            buffer_size: c.buffer_size().clone().into(),
+            buffer_size: (*c.buffer_size()).into(),
             sample_format: c.sample_format().into(),
         }
     }
@@ -106,7 +106,7 @@ impl From<cpal::SupportedStreamConfigRange> for SupportedStreamConfigRange {
             channels: c.channels(),
             min_sample_rate: c.min_sample_rate(),
             max_sample_rate: c.max_sample_rate(),
-            buffer_size: c.buffer_size().clone().into(),
+            buffer_size: (*c.buffer_size()).into(),
             sample_format: c.sample_format().into(),
         }
     }
