@@ -49,6 +49,7 @@ pub fn get_default_host() -> AudioHost {
 #[napi]
 pub fn host_from_id(id: crate::types::HostId) -> Result<AudioHost> {
     let cpal_id = match id {
+        #[cfg(target_os = "linux")]
         crate::types::HostId::Alsa => Some(cpal::HostId::Alsa),
         #[cfg(target_os = "macos")]
         crate::types::HostId::CoreAudio => Some(cpal::HostId::CoreAudio),
