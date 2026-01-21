@@ -2,7 +2,7 @@ name: Platform Compatibility
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths-ignore:
       - "**.md"
       - "docs/**"
@@ -11,7 +11,7 @@ on:
       - "Dockerfile*"
       - "Cross.toml"
   pull_request:
-    branches: [master]
+    branches: [main]
     paths-ignore:
       - "**.md"
       - "docs/**"
@@ -21,6 +21,7 @@ on:
       - "Cross.toml"
   release:
     types: [published]
+  workflow_dispatch:
 
 env:
   # MSRV varies by backend due to platform-specific dependencies
