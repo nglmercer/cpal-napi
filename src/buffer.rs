@@ -9,9 +9,9 @@ pub struct AudioBuffer {
 }
 
 impl Default for AudioBuffer {
-  fn default() -> Self {
-    Self::new()
-  }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[napi]
