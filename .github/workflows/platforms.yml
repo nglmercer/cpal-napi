@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 env:
-  MSRV: "1.82"
+  MSRV: stable
   PACKAGES_LINUX: libasound2-dev libjack-jackd2-dev libdbus-1-dev
 
 jobs:
