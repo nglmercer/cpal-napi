@@ -179,3 +179,19 @@ pub enum DevicesInner {
     Emscripten,
     Other,
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_i24() {
+        let val = I24::new(0x12345678);
+        assert_eq!(val.to_i32(), 0x345678);
+    }
+
+    #[test]
+    fn test_u24() {
+        let val = U24::new(0x12345678);
+        assert_eq!(val.to_u32(), 0x345678);
+    }
+}

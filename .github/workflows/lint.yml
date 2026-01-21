@@ -80,5 +80,8 @@ jobs:
       - name: Rust linting (clippy)
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+      - name: Build native module
+        run: bun run build:debug
+
       - name: TypeScript type check
         run: bun run tsc --noEmit || echo "TypeScript check completed"

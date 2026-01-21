@@ -22,13 +22,14 @@
     "declarationMap": false,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
+      "cpal-napi": ["./index"]
     },
   },
   "include": [
     "src/**/*.ts",
     "examples/**/*.ts",
     "scripts/**/*.ts",
+    "index.d.ts",
     "dist/**/*.d.ts",
   ],
   "exclude": [

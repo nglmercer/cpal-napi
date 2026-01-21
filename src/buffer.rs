@@ -43,3 +43,19 @@ impl AudioBuffer {
         buffer.len() as u32
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_audio_buffer() {
+        let buffer = AudioBuffer::new();
+        assert_eq!(buffer.length(), 0);
+
+        // We can't easily create Float32Array in Rust tests without napi context
+        // but we can test the inner logic if we want, or just verify it doesn't crash
+        buffer.clear();
+        assert_eq!(buffer.length(), 0);
+    }
+}
