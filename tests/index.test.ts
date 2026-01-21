@@ -1,50 +1,50 @@
 import { expect, test, describe } from "bun:test";
 import {
-  Message,
-  MessageType,
-  createGreeting,
-  add,
-  processNumbers,
-  divideNumbers,
-  generateSequence,
-  delayedMessage,
-} from "../index";
+  availableHosts,
+  getDefaultHost,
+  AudioBuffer,
+} from "../index.js";
 
-describe("NAPI Module Tests", () => {
-  // 1. Test Synchronous Functions
-  test("math operations: add and divide", () => {
-    expect(add(1, 5)).toBe(6);
-    expect(divideNumbers(1, 2)).toBe(0.5);
+
+describe("Audio Library Tests", () => {
+  test("availableHosts should return an array", () => {
+    const hosts = availableHosts();
+    expect(Array.isArray(hosts)).toBe(true);
+    expect(hosts.length).toBeGreaterThan(0);
   });
 
-  test("string formatting: createGreeting", () => {
-    const greeting = createGreeting("user", "-");
-    expect(greeting).toContain("user");
-    expect(greeting).toBe("- user, welcome to NAPI!");
+  test("getDefaultHost should return a host with a name", () => {
+    const host = getDefaultHost();
+    expect(host).toBeDefined();
+    expect(typeof host.name()).toBe("string");
   });
 
-  test("array mapping: processNumbers", () => {
-    const result = processNumbers([1, 2, 3]);
-    expect(result).toEqual([2, 4, 6]);
+  test("AudioBuffer should push and report length", () => {
+    const buffer = new AudioBuffer();
+    expect(buffer.length()).toBe(0);
+    
+    const samples = new Float32Array([0.1, 0.2, 0.3]);
+    buffer.push(samples);
+    expect(buffer.length()).toBe(3);
+    
+    buffer.clear();
+    expect(buffer.length()).toBe(0);
   });
 
-  // 2. Test Classes
-  test("Message class instantiation", () => {
-    const msg = new Message("hello", MessageType.Info);
-    expect(msg).toBeDefined();
-    // Use the methods your console.log suggested exist
-    expect(typeof msg.getTypeString).toBe("function");
+  test("Host should have devices", () => {
+    const host = getDefaultHost();
+    const devices = host.devices();
+    expect(Array.isArray(devices)).toBe(true);
   });
 
-  // 3. Test Asynchronous Functions
-  test("async sequence generation", async () => {
-    const sequence = await generateSequence(1, 5);
-    expect(sequence).toHaveLength(5);
-    expect(sequence).toEqual([1, 2, 3, 4, 5]);
-  });
-
-  test("async delayed message", async () => {
-    const message = await delayedMessage(100); // Reduced delay for faster tests
-    expect(message).toBe("Success after delay");
+  test("Default output device should have a name and config", () => {
+    const host = getDefaultHost();
+    const output = host.defaultOutputDevice();
+    if (output) {
+      expect(typeof output.name()).toBe("string");
+      const config = output.defaultOutputConfig();
+      expect(config.channels).toBeGreaterThan(0);
+      expect(config.sampleRate).toBeGreaterThan(0);
+    }
   });
 });

@@ -166,4 +166,45 @@ impl AudioDevice {
 
         Ok(AudioStream::new(stream))
     }
+
+    #[napi]
+    pub fn create_input_stream(
+        &self,
+        config: StreamConfig,
+        buffer: &AudioBuffer,
+    ) -> Result<AudioStream> {
+        let cpal_config = cpal::StreamConfig {
+            channels: config.channels,
+            sample_rate: cpal::SampleRate(config.sample_rate),
+            buffer_size: if config.buffer_size == 0 {
+                cpal::BufferSize::Default
+            } else {
+                cpal::BufferSize::Fixed(config.buffer_size)
+            },
+        };
+
+        let channels = config.channels as usize;
+        let shared_buffer = buffer.inner.clone();
+
+        let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
+
+        let stream = self
+            .inner
+            .build_input_stream(
+                &cpal_config,
+                move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                    let mut buffer = shared_buffer.lock().unwrap();
+                    for frame in data.chunks(channels) {
+                        if let Some(sample) = frame.first() {
+                            buffer.push_back(*sample);
+                        }
+                    }
+                },
+                err_fn,
+                None,
+            )
+            .map_err(|e| Error::from_reason(format!("Failed to build input stream: {}", e)))?;
+
+        Ok(AudioStream::new(stream))
+    }
 }
