@@ -93,3 +93,15 @@ pub fn available_hosts() -> Vec<String> {
         .map(|h| h.name().to_string())
         .collect()
 }
+
+#[napi]
+pub fn get_all_hosts_list() -> Vec<crate::types::HostId> {
+    vec![
+        crate::types::HostId::Alsa,
+        crate::types::HostId::Jack,
+        crate::types::HostId::Wasapi,
+        crate::types::HostId::Asio,
+        crate::types::HostId::CoreAudio,
+        crate::types::HostId::Emscripten,
+    ]
+}

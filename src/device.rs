@@ -1,5 +1,5 @@
 use crate::buffer::AudioBuffer;
-use crate::config::{StreamConfig, SupportedStreamConfig};
+use crate::config::{BufferSize, StreamConfig, SupportedStreamConfig};
 use crate::stream::AudioStream;
 use cpal::traits::DeviceTrait;
 use napi::bindgen_prelude::*;
@@ -10,13 +10,59 @@ pub struct AudioDevice {
     pub(crate) inner: cpal::Device,
 }
 
+#[napi(object)]
+pub struct DeviceId {
+    pub id: String,
+}
+
+#[napi(object)]
+pub struct Data {
+    pub sample_format: crate::types::SampleFormat,
+}
+
 #[napi]
 impl AudioDevice {
     #[napi]
+    pub fn id(&self) -> Result<DeviceId> {
+        Ok(DeviceId {
+            id: self
+                .inner
+                .id()
+                .map_err(|e| Error::from_reason(format!("Failed to get device id: {}", e)))?
+                .to_string(),
+        })
+    }
+
+    #[napi]
+    pub fn description(&self) -> Result<crate::device_description::DeviceDescription> {
+        let desc = self
+            .inner
+            .description()
+            .map_err(|e| Error::from_reason(format!("Failed to get device description: {}", e)))?;
+        Ok(crate::device_description::DeviceDescription {
+            name: desc.name().to_string(),
+            direction: match desc.direction() {
+                cpal::DeviceDirection::Input => crate::device_description::DeviceDirection::Input,
+                cpal::DeviceDirection::Output => crate::device_description::DeviceDirection::Output,
+                _ => crate::device_description::DeviceDirection::Output,
+            },
+            device_type: match desc.device_type() {
+                _ => crate::device_description::DeviceType::Other,
+            },
+            interface_type: match desc.interface_type() {
+                _ => crate::device_description::InterfaceType::Other,
+            },
+        })
+    }
+
+    #[napi]
     pub fn name(&self) -> Result<String> {
-        self.inner
+        Ok(self
+            .inner
+            .description()
+            .map_err(|e| Error::from_reason(format!("Failed to get name: {}", e)))?
             .name()
-            .map_err(|e| Error::from_reason(format!("Failed to get device name: {}", e)))
+            .to_string())
     }
 
     #[napi]
@@ -26,8 +72,8 @@ impl AudioDevice {
         })?;
         Ok(StreamConfig {
             channels: config.channels(),
-            sample_rate: config.sample_rate().0,
-            buffer_size: 0,
+            sample_rate: config.sample_rate(),
+            buffer_size: BufferSize::Default,
         })
     }
 
@@ -38,8 +84,8 @@ impl AudioDevice {
         })?;
         Ok(StreamConfig {
             channels: config.channels(),
-            sample_rate: config.sample_rate().0,
-            buffer_size: 0,
+            sample_rate: config.sample_rate(),
+            buffer_size: BufferSize::Default,
         })
     }
 
@@ -67,7 +113,7 @@ impl AudioDevice {
 
         let sample_format = config.sample_format();
         let config_inner: cpal::StreamConfig = config.into();
-        let sample_rate = config_inner.sample_rate.0 as f32;
+        let sample_rate = config_inner.sample_rate as f32;
         let channels = config_inner.channels as usize;
 
         let mut sample_clock = 0f32;
@@ -133,12 +179,8 @@ impl AudioDevice {
     ) -> Result<AudioStream> {
         let cpal_config = cpal::StreamConfig {
             channels: config.channels,
-            sample_rate: cpal::SampleRate(config.sample_rate),
-            buffer_size: if config.buffer_size == 0 {
-                cpal::BufferSize::Default
-            } else {
-                cpal::BufferSize::Fixed(config.buffer_size)
-            },
+            sample_rate: config.sample_rate,
+            buffer_size: config.buffer_size.into(),
         };
 
         let channels = config.channels as usize;
@@ -175,12 +217,8 @@ impl AudioDevice {
     ) -> Result<AudioStream> {
         let cpal_config = cpal::StreamConfig {
             channels: config.channels,
-            sample_rate: cpal::SampleRate(config.sample_rate),
-            buffer_size: if config.buffer_size == 0 {
-                cpal::BufferSize::Default
-            } else {
-                cpal::BufferSize::Fixed(config.buffer_size)
-            },
+            sample_rate: config.sample_rate,
+            buffer_size: config.buffer_size.into(),
         };
 
         let channels = config.channels as usize;
