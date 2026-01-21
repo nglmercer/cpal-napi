@@ -31,4 +31,16 @@ mod tests {
         let host = get_default_host();
         assert!(!host.name().is_empty());
     }
+
+    #[test]
+    fn test_all_hosts() {
+        let hosts = get_all_hosts();
+        assert!(!hosts.is_empty());
+    }
+
+    #[test]
+    fn test_all_hosts_list() {
+        let hosts = get_all_hosts_list();
+        assert!(!hosts.is_empty());
+    }
 }

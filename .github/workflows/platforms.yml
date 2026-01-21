@@ -57,10 +57,21 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --target ${{ matrix.target }} --release --verbose
+        shell: bash
+        run: |
+          cargo build --target ${{ matrix.target }} --release --verbose
+          # Rename the library to .node so that the upload-artifact step can find it
+          if [ -f "target/${{ matrix.target }}/release/libcpal_napi.so" ]; then
+            cp "target/${{ matrix.target }}/release/libcpal_napi.so" "target/${{ matrix.target }}/release/cpal-napi.node"
+          elif [ -f "target/${{ matrix.target }}/release/libcpal_napi.dylib" ]; then
+            cp "target/${{ matrix.target }}/release/libcpal_napi.dylib" "target/${{ matrix.target }}/release/cpal-napi.node"
+          elif [ -f "target/${{ matrix.target }}/release/cpal_napi.dll" ]; then
+            cp "target/${{ matrix.target }}/release/cpal_napi.dll" "target/${{ matrix.target }}/release/cpal-napi.node"
+          fi
 
       - name: Test
         if: matrix.target == 'x86_64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-gnu' || matrix.target == 'x86_64-pc-windows-msvc' || matrix.target == 'x86_64-apple-darwin' || matrix.target == 'aarch64-apple-darwin'
+        shell: bash
         run: cargo test --target ${{ matrix.target }} --release --verbose
 
       - name: Upload Artifact

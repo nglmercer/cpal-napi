@@ -105,3 +105,23 @@ pub fn get_all_hosts_list() -> Vec<crate::types::HostId> {
         crate::types::HostId::Emscripten,
     ]
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_available_hosts() {
+        let hosts = available_hosts();
+        assert!(!hosts.is_empty());
+    }
+
+    #[test]
+    fn test_host_from_id() {
+        let hosts = get_all_hosts_list();
+        for id in hosts {
+            // This might fail if the host is not available on the current platform,
+            // but we can at least try to see if it doesn't panic.
+            let _ = host_from_id(id);
+        }
+    }
+}
