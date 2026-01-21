@@ -1,92 +1,106 @@
-# napi-template-bun
+# cpal-napi
 
-A template for building NAPI (Node-API) native addons using Rust with Bun runtime.
+N-API (Node-API) wrapper for [cpal](https://github.com/RustAudio/cpal), a Cross-Platform Audio Library in pure Rust.
 
 ## Features
 
-- **Rust-based** native modules using `napi` crate
-- **Bun runtime** support for fast development
-- **Cross-platform** builds for Windows, macOS, and Linux
-- **TypeScript** support with automatic type definitions
-- **Modern tooling** with @napi-rs/cli
-
-## Prerequisites
-
-- Node.js >= 18.0.0
-- Bun >= 1.0.0
-- Rust toolchain (stable)
+- **Enumerate Hosts**: List available audio hosts (ALSA, WASAPI, CoreAudio, etc.)
+- **Device Management**: List input and output devices and get defaults.
+- **Audio Output**:
+  - Easy beep stream for testing.
+  - High-performance audio output via `AudioBuffer` (ring buffer) pushed from JavaScript/TypeScript.
+- **TypeScript Support**: Full type definitions automatically generated.
+- **Cross-platform**: Support for Linux, Windows, and macOS.
 
 ## Installation
 
 ```bash
-bun install
+bun install cpal-napi
 ```
 
-## Building
+## Usage
 
-### Release build
-```bash
-bun run build
-```
+```typescript
+import { getDefaultHost, AudioBuffer } from "cpal-napi";
 
-### Debug build
-```bash
-bun run build:debug
+const host = getDefaultHost();
+const device = host.defaultOutputDevice();
+
+if (device) {
+  const config = device.defaultOutputConfig();
+  const buffer = new AudioBuffer();
+
+  // Fill buffer with samples (-1.0 to 1.0)
+  const samples = new Float32Array(44100);
+  for (let i = 0; i < samples.length; i++) {
+    samples[i] = Math.sin((2 * Math.PI * 440 * i) / 44100);
+  }
+  buffer.push(samples);
+
+  const stream = device.createOutputStream(config, buffer);
+  stream.play();
+
+  // Audio plays in background
+  setTimeout(() => stream.pause(), 1000);
+}
 ```
 
 ## Development
 
-Run the example development script:
-```bash
-bun run dev
-```
-
-## Testing
+### Building
 
 ```bash
-bun test
+# Debug build
+bun run build:debug
+
+# Release build
+bun run build
 ```
 
-## Code Quality
-
-### Format
-```bash
-bun run format
-```
-
-### Lint (Rust)
-```bash
-bun run lint
-```
-
-### Type Check
-```bash
-bun run type-check
-```
-
-## Cleaning
+### Running Examples
 
 ```bash
-bun run clean
+bun run examples/dev.ts
 ```
 
-## Project Structure
+## API
 
-- `Cargo.toml` - Rust crate configuration with NAPI dependencies
-- `package.json` - Node.js package configuration with build scripts
-- `src/` - Rust source code
-- `examples/` - Usage examples
+### `getDefaultHost(): AudioHost`
 
-## Supported Platforms
+Returns the default audio host for the current system.
 
-- Windows (x86_64, i686)
-- macOS (x86_64, aarch64)
-- Linux (x86_64, aarch64)
+### `availableHosts(): string[]`
+
+Returns a list of available audio host names.
+
+### `AudioHost`
+
+- `name(): string`
+- `devices(): AudioDevice[]`
+- `defaultOutputDevice(): AudioDevice | null`
+- `defaultInputDevice(): AudioDevice | null`
+
+### `AudioDevice`
+
+- `name(): string`
+- `defaultOutputConfig(): AudioStreamConfig`
+- `defaultInputConfig(): AudioStreamConfig`
+- `supportedOutputConfigs(): SupportedAudioStreamConfig[]`
+- `createBeepStream(): AudioStream`
+- `createOutputStream(config: AudioStreamConfig, buffer: AudioBuffer): AudioStream`
+
+### `AudioBuffer`
+
+- `new AudioBuffer()`
+- `push(data: Float32Array): void`
+- `clear(): void`
+- `length(): number`
+
+### `AudioStream`
+
+- `play(): void`
+- `pause(): void`
 
 ## License
 
 MIT
-
-## Author
-
-Your Name <email@example.com>

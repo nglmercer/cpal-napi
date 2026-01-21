@@ -1,11 +1,10 @@
 [package]
-name = "napi_template"
-version = "1.0.0"
+name = "cpal-napi"
+version = "0.1.0"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib"]
-name = "napi_template"
 
 [package.metadata.napi]
 targets = [
@@ -20,8 +19,12 @@ targets = [
 [dependencies]
 napi = { version = "3.8.2", features = ["napi9", "async"] }
 napi-derive = "3.5.1"
-chrono = "0.4"
+cpal = "0.15"
 tokio = { version = "1", features = ["full"] }
+anyhow = "1.0"
+
+[features]
+asio = ["cpal/asio"]
 
 [build-dependencies]
 napi-build = "2"
