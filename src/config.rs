@@ -39,7 +39,7 @@ impl From<cpal::StreamConfig> for StreamConfig {
     fn from(c: cpal::StreamConfig) -> Self {
         StreamConfig {
             channels: c.channels,
-            sample_rate: c.sample_rate.into(),
+            sample_rate: c.sample_rate,
             buffer_size: c.buffer_size.into(),
             sample_format: SampleFormat::F32, // Default to F32 when converting from cpal::StreamConfig which doesn't have format
         }
@@ -52,7 +52,7 @@ impl From<cpal::SupportedStreamConfig> for StreamConfig {
         let config = c.config();
         StreamConfig {
             channels: config.channels,
-            sample_rate: config.sample_rate.into(),
+            sample_rate: config.sample_rate,
             buffer_size: config.buffer_size.into(),
             sample_format,
         }

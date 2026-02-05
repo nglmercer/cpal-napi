@@ -1,5 +1,5 @@
 use crate::buffer::AudioBuffer;
-use crate::config::{BufferSize, StreamConfig, SupportedStreamConfig};
+use crate::config::{StreamConfig, SupportedStreamConfig};
 use crate::stream::AudioStream;
 use cpal::traits::DeviceTrait;
 use napi::bindgen_prelude::*;
@@ -211,7 +211,7 @@ impl AudioDevice {
     ) -> Result<AudioStream> {
         let cpal_config = cpal::StreamConfig {
             channels: config.channels,
-            sample_rate: config.sample_rate.into(),
+            sample_rate: config.sample_rate,
             buffer_size: config.buffer_size.into(),
         };
 
@@ -346,7 +346,7 @@ impl AudioDevice {
     ) -> Result<AudioStream> {
         let cpal_config = cpal::StreamConfig {
             channels: config.channels,
-            sample_rate: config.sample_rate.into(),
+            sample_rate: config.sample_rate,
             buffer_size: config.buffer_size.into(),
         };
 
