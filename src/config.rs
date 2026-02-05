@@ -26,6 +26,15 @@ impl From<BufferSize> for cpal::BufferSize {
     }
 }
 
+#[napi]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChannelMixMode {
+    Auto,     // Dynamically pick the active channel (default)
+    Left,     // Force use of Left channel (1st)
+    Right,    // Force use of Right channel (2nd)
+    Balanced, // Simple average (L+R)/2
+}
+
 #[napi(object)]
 #[derive(Clone, Copy)]
 pub struct StreamConfig {
@@ -33,6 +42,10 @@ pub struct StreamConfig {
     pub sample_rate: u32,
     pub buffer_size: BufferSize,
     pub sample_format: SampleFormat,
+    pub mix_mode: Option<ChannelMixMode>,
+    /// Noise gate threshold (0.0 to 1.0). Samples below this level are silenced.
+    /// Default is None (no noise gate). Recommended range: 0.01-0.05 for hiss reduction.
+    pub noise_gate_threshold: Option<f64>,
 }
 
 impl From<cpal::StreamConfig> for StreamConfig {
@@ -42,6 +55,8 @@ impl From<cpal::StreamConfig> for StreamConfig {
             sample_rate: c.sample_rate,
             buffer_size: c.buffer_size.into(),
             sample_format: SampleFormat::F32, // Default to F32 when converting from cpal::StreamConfig which doesn't have format
+            mix_mode: Some(ChannelMixMode::Auto),
+            noise_gate_threshold: None,
         }
     }
 }
@@ -55,6 +70,8 @@ impl From<cpal::SupportedStreamConfig> for StreamConfig {
             sample_rate: config.sample_rate,
             buffer_size: config.buffer_size.into(),
             sample_format,
+            mix_mode: Some(ChannelMixMode::Auto),
+            noise_gate_threshold: None,
         }
     }
 }

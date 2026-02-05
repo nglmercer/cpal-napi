@@ -406,40 +406,89 @@ impl AudioDevice {
         };
 
         let sample_format = config.sample_format.into();
-
-        // Noise gate threshold - samples below this amplitude are treated as silence
-        // This prevents phantom buffer/noise when microphone is muted or silent
-        // Set above typical microphone noise floor (~0.008) to filter out hardware noise
-        const NOISE_GATE_THRESHOLD: f32 = 0.015;
+        let noise_gate = config.noise_gate_threshold.map(|t| t as f32);
 
         macro_rules! build_input {
             ($t:ty) => {
                 self.inner.build_input_stream(
                     &cpal_config,
                     move |data: &[$t], _| {
-                        // First, check if the entire chunk is silence
-                        // This is more efficient than checking each sample individually
-                        let has_signal = data.iter().any(|sample| {
-                            let value = cpal::Sample::to_sample::<f32>(*sample);
-                            value.abs() >= NOISE_GATE_THRESHOLD
-                        });
+                        // 1. Local buffer to process samples before locking.
+                        // This minimizes time spent holding the lock, reducing potential audio glitches/hiss.
+                        let mut processed = Vec::with_capacity(data.len() / channels);
 
-                        // If the entire chunk is silence, don't add anything to the buffer
-                        if !has_signal {
-                            return;
+                        match channels {
+                            1 => {
+                                // Pure mono
+                                processed.extend(data.iter().map(|&s| cpal::Sample::to_sample::<f32>(s)));
+                            },
+                            2 => {
+                                let mode = config.mix_mode.unwrap_or(crate::config::ChannelMixMode::Auto);
+                                match mode {
+                                    crate::config::ChannelMixMode::Left => {
+                                        for frame in data.chunks(2) {
+                                            processed.push(cpal::Sample::to_sample::<f32>(frame[0]));
+                                        }
+                                    },
+                                    crate::config::ChannelMixMode::Right => {
+                                        for frame in data.chunks(2) {
+                                            processed.push(cpal::Sample::to_sample::<f32>(frame[1]));
+                                        }
+                                    },
+                                    crate::config::ChannelMixMode::Balanced => {
+                                        for frame in data.chunks(2) {
+                                            let c0 = cpal::Sample::to_sample::<f32>(frame[0]);
+                                            let c1 = cpal::Sample::to_sample::<f32>(frame[1]);
+                                            processed.push((c0 + c1) * 0.5);
+                                        }
+                                    },
+                                    crate::config::ChannelMixMode::Auto => {
+                                        // Smart Auto-Selection (existing logic)
+                                        for frame in data.chunks(2) {
+                                            let c0 = cpal::Sample::to_sample::<f32>(frame[0]);
+                                            let c1 = cpal::Sample::to_sample::<f32>(frame[1]);
+                                            
+                                            let a0 = c0.abs();
+                                            let a1 = c1.abs();
+        
+                                            let val = if a0 > a1 * 8.0 && a1 < 0.02 {
+                                                c0
+                                            } else if a1 > a0 * 8.0 && a0 < 0.02 {
+                                                c1
+                                            } else {
+                                                (c0 + c1) * 0.5
+                                            };
+                                            processed.push(val);
+                                        }
+                                    }
+                                }
+                            },
+                            _ => {
+                                // Multi-channel fallback
+                                for frame in data.chunks(channels) {
+                                    let sum: f64 = frame.iter().map(|&s| cpal::Sample::to_sample::<f32>(s) as f64).sum();
+                                    processed.push((sum / channels as f64) as f32);
+                                }
+                            }
                         }
 
-                        let mut buffer = shared_buffer.lock().unwrap();
-                        for frame in data.chunks(channels) {
-                            if let Some(sample) = frame.first() {
-                                let value = cpal::Sample::to_sample::<f32>(*sample);
-                                // Apply noise gate: if the sample is below threshold, treat as silence
-                                let gated_value = if value.abs() < NOISE_GATE_THRESHOLD {
-                                    0.0
-                                } else {
-                                    value
-                                };
-                                buffer.push_back(gated_value);
+                        // 2. Apply noise gate if configured (silences hiss/noise below threshold)
+                        if let Some(threshold) = noise_gate {
+                            for sample in processed.iter_mut() {
+                                if sample.abs() < threshold {
+                                    *sample = 0.0;
+                                }
+                            }
+                        }
+
+                        // 3. Batch push to the shared buffer.
+                        if let Ok(mut buffer) = shared_buffer.lock() {
+                            buffer.extend(processed);
+                            
+                            // Safety check: Avoid building up infinite latency if the output is stalled.
+                            if buffer.len() > 44100 {
+                                let to_remove = buffer.len() - 22050; // Keep ~0.5s of buffer max
+                                drop(buffer.drain(0..to_remove));
                             }
                         }
                     },
@@ -448,6 +497,7 @@ impl AudioDevice {
                 )
             };
         }
+
 
         let stream = match sample_format {
             cpal::SampleFormat::I8 => build_input!(i8),

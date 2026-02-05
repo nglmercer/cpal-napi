@@ -2,6 +2,7 @@ use crate::device::AudioDevice;
 use cpal::traits::HostTrait;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+#[allow(unused_imports)]
 use std::os::raw::c_char;
 
 #[cfg(target_os = "linux")]

@@ -4,6 +4,10 @@ export interface CableOptions {
   bufferSize?: number;
   sampleRate?: number;
   channels?: number; // Desired output channel count (optional)
+  mixMode?: number; // 0=Auto, 1=Left, 2=Right, 3=Balanced (see ChannelMixMode)
+  /** Noise gate threshold (0.0 to 1.0). Samples below this level are silenced.
+   * Recommended range: 0.01-0.05 for hiss reduction. Default: no gate (undefined) */
+  noiseGateThreshold?: number;
 }
 
 export class AudioCable {
@@ -30,7 +34,6 @@ export class AudioCable {
     const rateInRange = (rate: number, cfg: SupportedStreamConfig) => {
       return rate >= cfg.minSampleRate && rate <= cfg.maxSampleRate;
     };
-
     // Get supported configs from both devices
     let inputConfigs: SupportedStreamConfig[];
     let outputConfigs: SupportedStreamConfig[];
@@ -150,13 +153,14 @@ export class AudioCable {
         console.warn(`Requested output channel count ${options.channels} not supported; using ${bestPair.outCfg.channels} channels instead.`);
       }
     }
-
+    console.log("rateInRange",rateInRange(bestPair.sampleRate,bestPair.inCfg))
     return {
       input: {
         channels: bestPair.inCfg.channels,
         sampleRate: bestPair.sampleRate,
         bufferSize: options.bufferSize ? { type: 'Fixed', field0: options.bufferSize } : { type: 'Default' },
-        sampleFormat: bestPair.inCfg.sampleFormat
+        sampleFormat: bestPair.inCfg.sampleFormat,
+        mixMode: options.mixMode
       },
       output: {
         channels: outputChannels,
