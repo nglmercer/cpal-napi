@@ -32,6 +32,17 @@ impl AudioBuffer {
     }
 
     #[napi]
+    pub fn beep(&self, frequency: f64, duration_ms: f64, sample_rate: f64) {
+        let mut buffer = self.inner.lock().unwrap();
+        let num_samples = (sample_rate * (duration_ms / 1000.0)) as usize;
+        for i in 0..num_samples {
+            let t = i as f64 / sample_rate;
+            let sample = (t * frequency * 2.0 * std::f64::consts::PI).sin() as f32;
+            buffer.push_back(sample);
+        }
+    }
+
+    #[napi]
     pub fn clear(&self) {
         let mut buffer = self.inner.lock().unwrap();
         buffer.clear();

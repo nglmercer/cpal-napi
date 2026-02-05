@@ -6,6 +6,102 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
 #[napi]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceDirection {
+    Input,
+    Output,
+}
+
+#[napi]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceType {
+    Internal,
+    Usb,
+    Bluetooth,
+    Network,
+    Firewire,
+    Virtual,
+    Other,
+}
+
+#[napi]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InterfaceType {
+    Alsa,
+    Jack,
+    Wasapi,
+    Asio,
+    CoreAudio,
+    Emscripten,
+    Other,
+}
+
+#[napi(object)]
+pub struct DeviceDescription {
+    pub name: String,
+    pub direction: DeviceDirection,
+    pub device_type: DeviceType,
+    pub interface_type: InterfaceType,
+}
+
+#[napi]
+pub struct DeviceDescriptionBuilder {
+    name: Option<String>,
+    direction: Option<DeviceDirection>,
+    device_type: Option<DeviceType>,
+    interface_type: Option<InterfaceType>,
+}
+
+impl Default for DeviceDescriptionBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[napi]
+impl DeviceDescriptionBuilder {
+    #[napi(constructor)]
+    pub fn new() -> DeviceDescriptionBuilder {
+        DeviceDescriptionBuilder {
+            name: None,
+            direction: None,
+            device_type: None,
+            interface_type: None,
+        }
+    }
+
+    #[napi]
+    pub fn name(&mut self, name: String) {
+        self.name = Some(name);
+    }
+
+    #[napi]
+    pub fn direction(&mut self, direction: DeviceDirection) {
+        self.direction = Some(direction);
+    }
+
+    #[napi]
+    pub fn device_type(&mut self, device_type: DeviceType) {
+        self.device_type = Some(device_type);
+    }
+
+    #[napi]
+    pub fn interface_type(&mut self, interface_type: InterfaceType) {
+        self.interface_type = Some(interface_type);
+    }
+
+    #[napi]
+    pub fn build(&self) -> DeviceDescription {
+        DeviceDescription {
+            name: self.name.clone().unwrap_or_default(),
+            direction: self.direction.unwrap_or(DeviceDirection::Output),
+            device_type: self.device_type.unwrap_or(DeviceType::Other),
+            interface_type: self.interface_type.unwrap_or(InterfaceType::Other),
+        }
+    }
+}
+
+#[napi]
 pub struct AudioDevice {
     pub(crate) inner: cpal::Device,
 }
@@ -34,20 +130,20 @@ impl AudioDevice {
     }
 
     #[napi]
-    pub fn description(&self) -> Result<crate::device_description::DeviceDescription> {
+    pub fn description(&self) -> Result<DeviceDescription> {
         let desc = self
             .inner
             .description()
             .map_err(|e| Error::from_reason(format!("Failed to get device description: {}", e)))?;
-        Ok(crate::device_description::DeviceDescription {
+        Ok(DeviceDescription {
             name: desc.name().to_string(),
             direction: match desc.direction() {
-                cpal::DeviceDirection::Input => crate::device_description::DeviceDirection::Input,
-                cpal::DeviceDirection::Output => crate::device_description::DeviceDirection::Output,
-                _ => crate::device_description::DeviceDirection::Output,
+                cpal::DeviceDirection::Input => DeviceDirection::Input,
+                cpal::DeviceDirection::Output => DeviceDirection::Output,
+                _ => DeviceDirection::Output,
             },
-            device_type: crate::device_description::DeviceType::Other,
-            interface_type: crate::device_description::InterfaceType::Other,
+            device_type: DeviceType::Other,
+            interface_type: InterfaceType::Other,
         })
     }
 
@@ -101,71 +197,6 @@ impl AudioDevice {
         Ok(configs.map(|c| c.into()).collect())
     }
 
-    #[napi]
-    pub fn create_beep_stream(&self) -> Result<AudioStream> {
-        let config = self.inner.default_output_config().map_err(|e| {
-            Error::from_reason(format!("Failed to get default output config: {}", e))
-        })?;
-
-        let sample_format = config.sample_format();
-        let config_inner: cpal::StreamConfig = config.into();
-        let sample_rate = config_inner.sample_rate as f32;
-        let channels = config_inner.channels as usize;
-
-        let mut sample_clock = 0f32;
-        let mut next_value = move || {
-            sample_clock = (sample_clock + 1.0) % sample_rate;
-            (sample_clock * 440.0 * 2.0 * std::f32::consts::PI / sample_rate).sin()
-        };
-
-        let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
-
-        let stream = match sample_format {
-            cpal::SampleFormat::F32 => self.inner.build_output_stream(
-                &config_inner,
-                move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                    for frame in data.chunks_mut(channels) {
-                        let value = next_value();
-                        for sample in frame.iter_mut() {
-                            *sample = value;
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            ),
-            cpal::SampleFormat::I16 => self.inner.build_output_stream(
-                &config_inner,
-                move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                    for frame in data.chunks_mut(channels) {
-                        let value = (next_value() * i16::MAX as f32) as i16;
-                        for sample in frame.iter_mut() {
-                            *sample = value;
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            ),
-            cpal::SampleFormat::U16 => self.inner.build_output_stream(
-                &config_inner,
-                move |data: &mut [u16], _: &cpal::OutputCallbackInfo| {
-                    for frame in data.chunks_mut(channels) {
-                        let value = ((next_value() * 0.5 + 0.5) * u16::MAX as f32) as u16;
-                        for sample in frame.iter_mut() {
-                            *sample = value;
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            ),
-            _ => return Err(Error::from_reason("Unsupported sample format")),
-        }
-        .map_err(|e| Error::from_reason(format!("Failed to build stream: {}", e)))?;
-
-        Ok(AudioStream::new(stream))
-    }
 
     #[napi]
     pub fn create_output_stream(

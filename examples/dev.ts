@@ -2,9 +2,9 @@ import {
   getDefaultHost,
   availableHosts,
 } from "cpal-napi";
-import { LOG_MESSAGES } from "./common.js";
-import { testBeepStream } from "./beep.js";
-import { testInputStream, testCustomBufferStream } from "./recording.js";
+import { LOG_MESSAGES } from "./core/common.js";
+//import { testBeepStream } from "./core/beep.js";
+import { testInputStream, testCustomBufferStream } from "./core/recording.js";
 
 // --- Main execution ---
 async function runDevExample() {
@@ -24,8 +24,8 @@ async function runDevExample() {
       console.log("Default Output Configuration:", config);
 
       // Execute output tests
-      await testBeepStream(output);
-      await testCustomBufferStream(output, config);
+      //await testBeepStream(output);
+      //await testCustomBufferStream(output, config);
     } else {
       console.warn(LOG_MESSAGES.NO_DEVICE);
     }

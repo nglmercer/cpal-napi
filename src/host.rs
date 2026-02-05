@@ -4,6 +4,32 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
 #[napi]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostId {
+    Alsa,
+    Jack,
+    Wasapi,
+    Asio,
+    CoreAudio,
+    Emscripten,
+    Other,
+}
+
+impl From<cpal::HostId> for HostId {
+    fn from(id: cpal::HostId) -> Self {
+        match id.name().to_lowercase().as_str() {
+            "alsa" => HostId::Alsa,
+            "jack" => HostId::Jack,
+            "wasapi" => HostId::Wasapi,
+            "asio" => HostId::Asio,
+            "coreaudio" => HostId::CoreAudio,
+            "emscripten" => HostId::Emscripten,
+            _ => HostId::Other,
+        }
+    }
+}
+
+#[napi]
 pub struct AudioHost {
     pub(crate) inner: cpal::Host,
 }
@@ -47,16 +73,16 @@ pub fn get_default_host() -> AudioHost {
 }
 
 #[napi]
-pub fn host_from_id(id: crate::types::HostId) -> Result<AudioHost> {
+pub fn host_from_id(id: HostId) -> Result<AudioHost> {
     let cpal_id = match id {
         #[cfg(target_os = "linux")]
-        crate::types::HostId::Alsa => Some(cpal::HostId::Alsa),
+        HostId::Alsa => Some(cpal::HostId::Alsa),
         #[cfg(target_os = "macos")]
-        crate::types::HostId::CoreAudio => Some(cpal::HostId::CoreAudio),
+        HostId::CoreAudio => Some(cpal::HostId::CoreAudio),
         #[cfg(target_os = "windows")]
-        crate::types::HostId::Wasapi => Some(cpal::HostId::Wasapi),
+        HostId::Wasapi => Some(cpal::HostId::Wasapi),
         #[cfg(all(target_os = "windows", feature = "asio"))]
-        crate::types::HostId::Asio => Some(cpal::HostId::Asio),
+        HostId::Asio => Some(cpal::HostId::Asio),
         // Jack and others are tricky due to features, but we can try to use cpal's available hosts
         _ => None,
     };
@@ -68,12 +94,12 @@ pub fn host_from_id(id: crate::types::HostId) -> Result<AudioHost> {
     } else {
         // Fallback for cases where we can't name the ID directly but it might be available
         let name = match id {
-            crate::types::HostId::Alsa => "alsa",
-            crate::types::HostId::Jack => "jack",
-            crate::types::HostId::Wasapi => "wasapi",
-            crate::types::HostId::Asio => "asio",
-            crate::types::HostId::CoreAudio => "coreaudio",
-            crate::types::HostId::Emscripten => "emscripten",
+            HostId::Alsa => "alsa",
+            HostId::Jack => "jack",
+            HostId::Wasapi => "wasapi",
+            HostId::Asio => "asio",
+            HostId::CoreAudio => "coreaudio",
+            HostId::Emscripten => "emscripten",
             _ => "",
         };
 
@@ -95,15 +121,20 @@ pub fn available_hosts() -> Vec<String> {
 }
 
 #[napi]
-pub fn get_all_hosts_list() -> Vec<crate::types::HostId> {
+pub fn get_all_hosts() -> Vec<HostId> {
     vec![
-        crate::types::HostId::Alsa,
-        crate::types::HostId::Jack,
-        crate::types::HostId::Wasapi,
-        crate::types::HostId::Asio,
-        crate::types::HostId::CoreAudio,
-        crate::types::HostId::Emscripten,
+        HostId::Alsa,
+        HostId::Jack,
+        HostId::Wasapi,
+        HostId::Asio,
+        HostId::CoreAudio,
+        HostId::Emscripten,
     ]
+}
+
+#[napi]
+pub fn get_all_hosts_list() -> Vec<HostId> {
+    get_all_hosts()
 }
 #[cfg(test)]
 mod tests {

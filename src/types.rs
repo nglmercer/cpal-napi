@@ -50,44 +50,6 @@ impl From<SampleFormat> for cpal::SampleFormat {
     }
 }
 
-#[napi]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HostId {
-    Alsa,
-    Jack,
-    Wasapi,
-    Asio,
-    CoreAudio,
-    Emscripten,
-    Other,
-}
-
-impl From<cpal::HostId> for HostId {
-    fn from(id: cpal::HostId) -> Self {
-        match id.name().to_lowercase().as_str() {
-            "alsa" => HostId::Alsa,
-            "jack" => HostId::Jack,
-            "wasapi" => HostId::Wasapi,
-            "asio" => HostId::Asio,
-            "coreaudio" => HostId::CoreAudio,
-            "emscripten" => HostId::Emscripten,
-            _ => HostId::Other,
-        }
-    }
-}
-
-#[napi]
-pub fn get_all_hosts() -> Vec<HostId> {
-    vec![
-        HostId::Alsa,
-        HostId::Jack,
-        HostId::Wasapi,
-        HostId::Asio,
-        HostId::CoreAudio,
-        HostId::Emscripten,
-    ]
-}
-
 pub type ChannelCount = u16;
 pub type FrameCount = u32;
 pub type SampleRate = u32;
@@ -134,50 +96,6 @@ impl U24 {
     pub fn to_u32(&self) -> u32 {
         self.inner
     }
-}
-
-#[napi]
-pub enum HostInner {
-    Alsa,
-    Jack,
-    Wasapi,
-    Asio,
-    CoreAudio,
-    Emscripten,
-    Other,
-}
-
-#[napi]
-pub enum DeviceInner {
-    Alsa,
-    Jack,
-    Wasapi,
-    Asio,
-    CoreAudio,
-    Emscripten,
-    Other,
-}
-
-#[napi]
-pub enum StreamInner {
-    Alsa,
-    Jack,
-    Wasapi,
-    Asio,
-    CoreAudio,
-    Emscripten,
-    Other,
-}
-
-#[napi]
-pub enum DevicesInner {
-    Alsa,
-    Jack,
-    Wasapi,
-    Asio,
-    CoreAudio,
-    Emscripten,
-    Other,
 }
 #[cfg(test)]
 mod tests {
