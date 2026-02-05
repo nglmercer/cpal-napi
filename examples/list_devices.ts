@@ -19,7 +19,7 @@ export function listAllDevices() {
   devices.forEach((device, index) => {
     try {
       const name = device.name();
-      console.log(`  ${index + 1}. ${name}`);
+      console.log(`  ${index + 1}. ${name}`,device.description());
       // Only log brief info to avoid excessive output
     } catch (e) {
       console.log(`  ${index + 1}. [Error getting device name]`);

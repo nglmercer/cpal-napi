@@ -390,31 +390,45 @@ impl AudioDevice {
                 .build_threadsafe_function::<String>()
                 .callee_handled::<true>()
                 .build_callback(|ctx| Ok((ctx.value.clone(),)))?;
-            Some(f)
+            Some(std::sync::Arc::new(f))
         } else {
             None
         };
 
-        let err_fn = move |err: cpal::StreamError| {
-            let msg = err.to_string();
-            if let Some(ref f) = tsfn {
-                let _ = f.call(Ok(msg.clone()), ThreadsafeFunctionCallMode::NonBlocking);
-            }
-            if !msg.contains("underrun") && !msg.contains("overrun") {
-                crate::logger::log(&format!("an error occurred on stream: {}", err));
-            }
-        };
+        // Note: err_fn definition moved inside macro to avoid 'use of moved value' errors across match arms.
 
         let sample_format = config.sample_format.into();
         let noise_gate = config.noise_gate_threshold.map(|t| t as f32);
+        let mix_mode = config.mix_mode.unwrap_or(crate::config::ChannelMixMode::Auto);
 
         macro_rules! build_input {
-            ($t:ty) => {
+            ($t:ty) => {{
+                let mut peak_l = 0.0f32;
+                let mut peak_r = 0.0f32;
+                let alpha = 0.95f32; // Env decay
+
+                // Prepare dependencies for this specific closure instance
+                let tsfn_local = tsfn.clone();
+                let shared_buffer_local = shared_buffer.clone();
+                
+                // If mix_mode is Copy (Enum), this is a copy. If not, we might need a clone.
+                // Assuming Copy for now based on typical usage, but shadowing ensures we have a local binding.
+                let mix_mode_local = mix_mode; 
+
+                let err_fn_local = move |err: cpal::StreamError| {
+                    let msg = err.to_string();
+                    if let Some(ref f) = tsfn_local {
+                        let _ = f.call(Ok(msg.clone()), ThreadsafeFunctionCallMode::NonBlocking);
+                    }
+                    if !msg.contains("underrun") && !msg.contains("overrun") {
+                        crate::logger::log(&format!("an error occurred on stream: {}", err));
+                    }
+                };
+
                 self.inner.build_input_stream(
                     &cpal_config,
                     move |data: &[$t], _| {
                         // 1. Local buffer to process samples before locking.
-                        // This minimizes time spent holding the lock, reducing potential audio glitches/hiss.
                         let mut processed = Vec::with_capacity(data.len() / channels);
 
                         match channels {
@@ -423,8 +437,7 @@ impl AudioDevice {
                                 processed.extend(data.iter().map(|&s| cpal::Sample::to_sample::<f32>(s)));
                             },
                             2 => {
-                                let mode = config.mix_mode.unwrap_or(crate::config::ChannelMixMode::Auto);
-                                match mode {
+                                match mix_mode_local {
                                     crate::config::ChannelMixMode::Left => {
                                         for frame in data.chunks(2) {
                                             processed.push(cpal::Sample::to_sample::<f32>(frame[0]));
@@ -443,22 +456,55 @@ impl AudioDevice {
                                         }
                                     },
                                     crate::config::ChannelMixMode::Auto => {
-                                        // Smart Auto-Selection (existing logic)
+                                        // 1. Analyze the buffer (Per-Buffer Analysis)
+                                        let mut max_l = 0.0f32;
+                                        let mut max_r = 0.0f32;
                                         for frame in data.chunks(2) {
-                                            let c0 = cpal::Sample::to_sample::<f32>(frame[0]);
-                                            let c1 = cpal::Sample::to_sample::<f32>(frame[1]);
-                                            
-                                            let a0 = c0.abs();
-                                            let a1 = c1.abs();
-        
-                                            let val = if a0 > a1 * 8.0 && a1 < 0.02 {
-                                                c0
-                                            } else if a1 > a0 * 8.0 && a0 < 0.02 {
-                                                c1
-                                            } else {
-                                                (c0 + c1) * 0.5
-                                            };
-                                            processed.push(val);
+                                            let l = cpal::Sample::to_sample::<f32>(frame[0]).abs();
+                                            let r = cpal::Sample::to_sample::<f32>(frame[1]).abs();
+                                            if l > max_l { max_l = l; }
+                                            if r > max_r { max_r = r; }
+                                        }
+
+                                        // 2. Update Envelopes
+                                        peak_l = max_l.max(peak_l * alpha);
+                                        peak_r = max_r.max(peak_r * alpha);
+
+                                        // 3. Decide Strategy
+                                        let threshold = noise_gate.unwrap_or(0.0);
+                                        let l_active = peak_l >= threshold;
+                                        let r_active = peak_r >= threshold;
+
+                                        let use_l;
+                                        let use_r;
+                                        
+                                        if l_active && !r_active {
+                                            use_l = true;
+                                            use_r = false;
+                                        } else if r_active && !l_active {
+                                            use_l = false;
+                                            use_r = true;
+                                        } else {
+                                            // Both active/inactive: compare smoothed peaks
+                                            use_l = peak_l > peak_r * 1.15;
+                                            use_r = peak_r > peak_l * 1.15;
+                                        }
+
+                                        if use_l {
+                                            for frame in data.chunks(2) {
+                                                processed.push(cpal::Sample::to_sample::<f32>(frame[0]));
+                                            }
+                                        } else if use_r {
+                                            for frame in data.chunks(2) {
+                                                processed.push(cpal::Sample::to_sample::<f32>(frame[1]));
+                                            }
+                                        } else {
+                                            // Balanced fallback
+                                            for frame in data.chunks(2) {
+                                                let c0 = cpal::Sample::to_sample::<f32>(frame[0]);
+                                                let c1 = cpal::Sample::to_sample::<f32>(frame[1]);
+                                                processed.push((c0 + c1) * 0.5);
+                                            }
                                         }
                                     }
                                 }
@@ -472,7 +518,7 @@ impl AudioDevice {
                             }
                         }
 
-                        // 2. Apply noise gate if configured (silences hiss/noise below threshold)
+                        // 2. Gate
                         if let Some(threshold) = noise_gate {
                             for sample in processed.iter_mut() {
                                 if sample.abs() < threshold {
@@ -481,21 +527,20 @@ impl AudioDevice {
                             }
                         }
 
-                        // 3. Batch push to the shared buffer.
-                        if let Ok(mut buffer) = shared_buffer.lock() {
+                        // 3. Push
+                        if let Ok(mut buffer) = shared_buffer_local.lock() {
                             buffer.extend(processed);
                             
-                            // Safety check: Avoid building up infinite latency if the output is stalled.
                             if buffer.len() > 44100 {
-                                let to_remove = buffer.len() - 22050; // Keep ~0.5s of buffer max
+                                let to_remove = buffer.len() - 22050; // Keep ~0.5s
                                 drop(buffer.drain(0..to_remove));
                             }
                         }
                     },
-                    err_fn,
+                    err_fn_local,
                     None,
                 )
-            };
+            }};
         }
 
 
