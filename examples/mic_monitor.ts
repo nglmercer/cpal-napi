@@ -34,7 +34,7 @@ async function main() {
   // Helper to test a pair
   const testPair = (input: AudioDevice, output: AudioDevice): AudioCable | null => {
     try {
-      return new AudioCable(input, output, { bufferSize: 1024 });
+      return new AudioCable(input, output, { bufferSize: 1024, noiseGateThreshold: 0.008 });
     } catch (e) {
       return null;
     }

@@ -160,7 +160,8 @@ export class AudioCable {
         sampleRate: bestPair.sampleRate,
         bufferSize: options.bufferSize ? { type: 'Fixed', field0: options.bufferSize } : { type: 'Default' },
         sampleFormat: bestPair.inCfg.sampleFormat,
-        mixMode: options.mixMode
+        mixMode: options.mixMode,
+        noiseGateThreshold: options.noiseGateThreshold
       },
       output: {
         channels: outputChannels,
