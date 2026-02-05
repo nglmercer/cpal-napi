@@ -132,7 +132,7 @@ impl AudioDevice {
     #[napi]
     pub fn description(&self) -> Result<DeviceDescription> {
         let name = self.name().unwrap_or_else(|_| "Unknown".to_string());
-        
+
         Ok(DeviceDescription {
             name,
             direction: if self.is_input() {
@@ -147,12 +147,18 @@ impl AudioDevice {
 
     #[napi]
     pub fn is_input(&self) -> bool {
-        self.inner.supported_input_configs().map(|mut i| i.next().is_some()).unwrap_or(false)
+        self.inner
+            .supported_input_configs()
+            .map(|mut i| i.next().is_some())
+            .unwrap_or(false)
     }
 
     #[napi]
     pub fn is_output(&self) -> bool {
-        self.inner.supported_output_configs().map(|mut i| i.next().is_some()).unwrap_or(false)
+        self.inner
+            .supported_output_configs()
+            .map(|mut i| i.next().is_some())
+            .unwrap_or(false)
     }
 
     #[napi]
@@ -197,7 +203,6 @@ impl AudioDevice {
         Ok(configs.map(|c| c.into()).collect())
     }
 
-
     #[napi]
     pub fn create_output_stream(
         &self,
@@ -206,7 +211,7 @@ impl AudioDevice {
     ) -> Result<AudioStream> {
         let cpal_config = cpal::StreamConfig {
             channels: config.channels,
-            sample_rate: cpal::SampleRate(config.sample_rate),
+            sample_rate: config.sample_rate.into(),
             buffer_size: config.buffer_size.into(),
         };
 
@@ -321,7 +326,12 @@ impl AudioDevice {
                 err_fn,
                 None,
             ),
-            _ => return Err(Error::from_reason(format!("Unsupported sample format: {:?}", sample_format))),
+            _ => {
+                return Err(Error::from_reason(format!(
+                    "Unsupported sample format: {:?}",
+                    sample_format
+                )))
+            }
         }
         .map_err(|e| Error::from_reason(format!("Failed to build output stream: {}", e)))?;
 
@@ -336,7 +346,7 @@ impl AudioDevice {
     ) -> Result<AudioStream> {
         let cpal_config = cpal::StreamConfig {
             channels: config.channels,
-            sample_rate: cpal::SampleRate(config.sample_rate),
+            sample_rate: config.sample_rate.into(),
             buffer_size: config.buffer_size.into(),
         };
 
@@ -438,7 +448,12 @@ impl AudioDevice {
                 err_fn,
                 None,
             ),
-            _ => return Err(Error::from_reason(format!("Unsupported sample format: {:?}", sample_format))),
+            _ => {
+                return Err(Error::from_reason(format!(
+                    "Unsupported sample format: {:?}",
+                    sample_format
+                )))
+            }
         }
         .map_err(|e| Error::from_reason(format!("Failed to build input stream: {}", e)))?;
 
