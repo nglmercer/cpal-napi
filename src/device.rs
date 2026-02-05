@@ -131,20 +131,28 @@ impl AudioDevice {
 
     #[napi]
     pub fn description(&self) -> Result<DeviceDescription> {
-        let desc = self
-            .inner
-            .description()
-            .map_err(|e| Error::from_reason(format!("Failed to get device description: {}", e)))?;
+        let name = self.name().unwrap_or_else(|_| "Unknown".to_string());
+        
         Ok(DeviceDescription {
-            name: desc.name().to_string(),
-            direction: match desc.direction() {
-                cpal::DeviceDirection::Input => DeviceDirection::Input,
-                cpal::DeviceDirection::Output => DeviceDirection::Output,
-                _ => DeviceDirection::Output,
+            name,
+            direction: if self.is_input() {
+                DeviceDirection::Input
+            } else {
+                DeviceDirection::Output
             },
             device_type: DeviceType::Other,
             interface_type: InterfaceType::Other,
         })
+    }
+
+    #[napi]
+    pub fn is_input(&self) -> bool {
+        self.inner.supported_input_configs().map(|mut i| i.next().is_some()).unwrap_or(false)
+    }
+
+    #[napi]
+    pub fn is_output(&self) -> bool {
+        self.inner.supported_output_configs().map(|mut i| i.next().is_some()).unwrap_or(false)
     }
 
     #[napi]
@@ -162,11 +170,7 @@ impl AudioDevice {
         let config = self.inner.default_output_config().map_err(|e| {
             Error::from_reason(format!("Failed to get default output config: {}", e))
         })?;
-        Ok(StreamConfig {
-            channels: config.channels(),
-            sample_rate: config.sample_rate(),
-            buffer_size: BufferSize::Default,
-        })
+        Ok(config.into())
     }
 
     #[napi]
@@ -174,11 +178,7 @@ impl AudioDevice {
         let config = self.inner.default_input_config().map_err(|e| {
             Error::from_reason(format!("Failed to get default input config: {}", e))
         })?;
-        Ok(StreamConfig {
-            channels: config.channels(),
-            sample_rate: config.sample_rate(),
-            buffer_size: BufferSize::Default,
-        })
+        Ok(config.into())
     }
 
     #[napi]
@@ -206,32 +206,124 @@ impl AudioDevice {
     ) -> Result<AudioStream> {
         let cpal_config = cpal::StreamConfig {
             channels: config.channels,
-            sample_rate: config.sample_rate,
+            sample_rate: cpal::SampleRate(config.sample_rate),
             buffer_size: config.buffer_size.into(),
         };
 
         let channels = config.channels as usize;
         let shared_buffer = buffer.inner.clone();
-
         let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
 
-        let stream = self
-            .inner
-            .build_output_stream(
+        let sample_format = config.sample_format.into();
+
+        let stream = match sample_format {
+            cpal::SampleFormat::I8 => self.inner.build_output_stream(
                 &cpal_config,
-                move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                move |data: &mut [i8], _| {
                     let mut buffer = shared_buffer.lock().unwrap();
                     for frame in data.chunks_mut(channels) {
                         let value = buffer.pop_front().unwrap_or(0.0);
-                        for sample in frame.iter_mut() {
-                            *sample = value;
+                        let sample = cpal::Sample::from_sample(value);
+                        for s in frame.iter_mut() {
+                            *s = sample;
                         }
                     }
                 },
                 err_fn,
                 None,
-            )
-            .map_err(|e| Error::from_reason(format!("Failed to build stream: {}", e)))?;
+            ),
+            cpal::SampleFormat::U8 => self.inner.build_output_stream(
+                &cpal_config,
+                move |data: &mut [u8], _| {
+                    let mut buffer = shared_buffer.lock().unwrap();
+                    for frame in data.chunks_mut(channels) {
+                        let value = buffer.pop_front().unwrap_or(0.0);
+                        let sample = cpal::Sample::from_sample(value);
+                        for s in frame.iter_mut() {
+                            *s = sample;
+                        }
+                    }
+                },
+                err_fn,
+                None,
+            ),
+            cpal::SampleFormat::I16 => self.inner.build_output_stream(
+                &cpal_config,
+                move |data: &mut [i16], _| {
+                    let mut buffer = shared_buffer.lock().unwrap();
+                    for frame in data.chunks_mut(channels) {
+                        let value = buffer.pop_front().unwrap_or(0.0);
+                        let sample = cpal::Sample::from_sample(value);
+                        for s in frame.iter_mut() {
+                            *s = sample;
+                        }
+                    }
+                },
+                err_fn,
+                None,
+            ),
+            cpal::SampleFormat::U16 => self.inner.build_output_stream(
+                &cpal_config,
+                move |data: &mut [u16], _| {
+                    let mut buffer = shared_buffer.lock().unwrap();
+                    for frame in data.chunks_mut(channels) {
+                        let value = buffer.pop_front().unwrap_or(0.0);
+                        let sample = cpal::Sample::from_sample(value);
+                        for s in frame.iter_mut() {
+                            *s = sample;
+                        }
+                    }
+                },
+                err_fn,
+                None,
+            ),
+            cpal::SampleFormat::I32 => self.inner.build_output_stream(
+                &cpal_config,
+                move |data: &mut [i32], _| {
+                    let mut buffer = shared_buffer.lock().unwrap();
+                    for frame in data.chunks_mut(channels) {
+                        let value = buffer.pop_front().unwrap_or(0.0);
+                        let sample = cpal::Sample::from_sample(value);
+                        for s in frame.iter_mut() {
+                            *s = sample;
+                        }
+                    }
+                },
+                err_fn,
+                None,
+            ),
+            cpal::SampleFormat::U32 => self.inner.build_output_stream(
+                &cpal_config,
+                move |data: &mut [u32], _| {
+                    let mut buffer = shared_buffer.lock().unwrap();
+                    for frame in data.chunks_mut(channels) {
+                        let value = buffer.pop_front().unwrap_or(0.0);
+                        let sample = cpal::Sample::from_sample(value);
+                        for s in frame.iter_mut() {
+                            *s = sample;
+                        }
+                    }
+                },
+                err_fn,
+                None,
+            ),
+            cpal::SampleFormat::F32 => self.inner.build_output_stream(
+                &cpal_config,
+                move |data: &mut [f32], _| {
+                    let mut buffer = shared_buffer.lock().unwrap();
+                    for frame in data.chunks_mut(channels) {
+                        let value = buffer.pop_front().unwrap_or(0.0);
+                        for s in frame.iter_mut() {
+                            *s = value;
+                        }
+                    }
+                },
+                err_fn,
+                None,
+            ),
+            _ => return Err(Error::from_reason(format!("Unsupported sample format: {:?}", sample_format))),
+        }
+        .map_err(|e| Error::from_reason(format!("Failed to build output stream: {}", e)))?;
 
         Ok(AudioStream::new(stream))
     }
@@ -244,20 +336,98 @@ impl AudioDevice {
     ) -> Result<AudioStream> {
         let cpal_config = cpal::StreamConfig {
             channels: config.channels,
-            sample_rate: config.sample_rate,
+            sample_rate: cpal::SampleRate(config.sample_rate),
             buffer_size: config.buffer_size.into(),
         };
 
         let channels = config.channels as usize;
         let shared_buffer = buffer.inner.clone();
-
         let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
 
-        let stream = self
-            .inner
-            .build_input_stream(
+        let sample_format = config.sample_format.into();
+
+        let stream = match sample_format {
+            cpal::SampleFormat::I8 => self.inner.build_input_stream(
                 &cpal_config,
-                move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                move |data: &[i8], _| {
+                    let mut buffer = shared_buffer.lock().unwrap();
+                    for frame in data.chunks(channels) {
+                        if let Some(sample) = frame.first() {
+                            buffer.push_back(cpal::Sample::to_sample::<f32>(*sample));
+                        }
+                    }
+                },
+                err_fn,
+                None,
+            ),
+            cpal::SampleFormat::U8 => self.inner.build_input_stream(
+                &cpal_config,
+                move |data: &[u8], _| {
+                    let mut buffer = shared_buffer.lock().unwrap();
+                    for frame in data.chunks(channels) {
+                        if let Some(sample) = frame.first() {
+                            buffer.push_back(cpal::Sample::to_sample::<f32>(*sample));
+                        }
+                    }
+                },
+                err_fn,
+                None,
+            ),
+            cpal::SampleFormat::I16 => self.inner.build_input_stream(
+                &cpal_config,
+                move |data: &[i16], _| {
+                    let mut buffer = shared_buffer.lock().unwrap();
+                    for frame in data.chunks(channels) {
+                        if let Some(sample) = frame.first() {
+                            buffer.push_back(cpal::Sample::to_sample::<f32>(*sample));
+                        }
+                    }
+                },
+                err_fn,
+                None,
+            ),
+            cpal::SampleFormat::U16 => self.inner.build_input_stream(
+                &cpal_config,
+                move |data: &[u16], _| {
+                    let mut buffer = shared_buffer.lock().unwrap();
+                    for frame in data.chunks(channels) {
+                        if let Some(sample) = frame.first() {
+                            buffer.push_back(cpal::Sample::to_sample::<f32>(*sample));
+                        }
+                    }
+                },
+                err_fn,
+                None,
+            ),
+            cpal::SampleFormat::I32 => self.inner.build_input_stream(
+                &cpal_config,
+                move |data: &[i32], _| {
+                    let mut buffer = shared_buffer.lock().unwrap();
+                    for frame in data.chunks(channels) {
+                        if let Some(sample) = frame.first() {
+                            buffer.push_back(cpal::Sample::to_sample::<f32>(*sample));
+                        }
+                    }
+                },
+                err_fn,
+                None,
+            ),
+            cpal::SampleFormat::U32 => self.inner.build_input_stream(
+                &cpal_config,
+                move |data: &[u32], _| {
+                    let mut buffer = shared_buffer.lock().unwrap();
+                    for frame in data.chunks(channels) {
+                        if let Some(sample) = frame.first() {
+                            buffer.push_back(cpal::Sample::to_sample::<f32>(*sample));
+                        }
+                    }
+                },
+                err_fn,
+                None,
+            ),
+            cpal::SampleFormat::F32 => self.inner.build_input_stream(
+                &cpal_config,
+                move |data: &[f32], _| {
                     let mut buffer = shared_buffer.lock().unwrap();
                     for frame in data.chunks(channels) {
                         if let Some(sample) = frame.first() {
@@ -267,8 +437,10 @@ impl AudioDevice {
                 },
                 err_fn,
                 None,
-            )
-            .map_err(|e| Error::from_reason(format!("Failed to build input stream: {}", e)))?;
+            ),
+            _ => return Err(Error::from_reason(format!("Unsupported sample format: {:?}", sample_format))),
+        }
+        .map_err(|e| Error::from_reason(format!("Failed to build input stream: {}", e)))?;
 
         Ok(AudioStream::new(stream))
     }

@@ -51,6 +51,24 @@ impl AudioHost {
     }
 
     #[napi]
+    pub fn input_devices(&self) -> Result<Vec<AudioDevice>> {
+        let devices = self
+            .inner
+            .input_devices()
+            .map_err(|e| Error::from_reason(format!("Failed to get input devices: {}", e)))?;
+        Ok(devices.map(|d| AudioDevice { inner: d }).collect())
+    }
+
+    #[napi]
+    pub fn output_devices(&self) -> Result<Vec<AudioDevice>> {
+        let devices = self
+            .inner
+            .output_devices()
+            .map_err(|e| Error::from_reason(format!("Failed to get output devices: {}", e)))?;
+        Ok(devices.map(|d| AudioDevice { inner: d }).collect())
+    }
+
+    #[napi]
     pub fn default_input_device(&self) -> Option<AudioDevice> {
         self.inner
             .default_input_device()

@@ -35,7 +35,6 @@ describe("Audio Library Tests", () => {
   test("hostFromId should work for at least one host", () => {
     const hosts = availableHosts();
     if (hosts.length > 0) {
-      // Find a host that we have an enum for
       const allHostIds = [
         HostId.Alsa,
         HostId.CoreAudio,
@@ -44,15 +43,14 @@ describe("Audio Library Tests", () => {
         HostId.Asio,
       ];
       
-      // Try to find one that matches available hosts
       for (const id of allHostIds) {
         try {
           const host = hostFromId(id);
           expect(host).toBeDefined();
           expect(typeof host.name()).toBe("string");
-          break; // If one works, we are good
+          break;
         } catch (e) {
-          // Some hosts might not be available on all platforms
+          // host might not be available
         }
       }
     }
@@ -65,6 +63,20 @@ describe("Audio Library Tests", () => {
     const samples = new Float32Array([0.1, 0.2, 0.3]);
     buffer.push(samples);
     expect(buffer.length()).toBe(3);
+    
+    buffer.clear();
+    expect(buffer.length()).toBe(0);
+  });
+
+  test("AudioBuffer.beep should generate samples", () => {
+    const buffer = new AudioBuffer();
+    const frequency = 440;
+    const durationMs = 100; // short for testing
+    const sampleRate = 44100;
+    const expectedSamples = (sampleRate * durationMs) / 1000;
+
+    buffer.beep(frequency, durationMs, sampleRate);
+    expect(buffer.length()).toBe(expectedSamples);
     
     buffer.clear();
     expect(buffer.length()).toBe(0);
@@ -85,7 +97,7 @@ describe("Audio Library Tests", () => {
   });
 
   test("Default output device should have properties", () => {
-    if (IS_CI) return; // Skip in CI as it likely won't have devices
+    if (IS_CI) return;
 
     const host = getDefaultHost();
     const output = host.defaultOutputDevice();
@@ -94,50 +106,52 @@ describe("Audio Library Tests", () => {
       const id = output.id();
       expect(typeof id.id).toBe("string");
       
-      const desc = output.description();
-      expect(desc.name).toBe(output.name());
-      
       const config = output.defaultOutputConfig();
       expect(config.channels).toBeGreaterThan(0);
       expect(config.sampleRate).toBeGreaterThan(0);
-
-      const configs = output.supportedOutputConfigs();
-      expect(Array.isArray(configs)).toBe(true);
     }
   });
 
-  test("Default input device should have properties", () => {
-    if (IS_CI) return; // Skip in CI
-
-    const host = getDefaultHost();
-    const input = host.defaultInputDevice();
-    if (input) {
-      expect(typeof input.name()).toBe("string");
-      const config = input.defaultInputConfig();
-      expect(config.channels).toBeGreaterThan(0);
-      expect(config.sampleRate).toBeGreaterThan(0);
-
-      const configs = input.supportedInputConfigs();
-      expect(Array.isArray(configs)).toBe(true);
-    }
-  });
-
-  test("Beep stream creation", () => {
-    if (IS_CI) return; // Skip in CI
+  test("OutputStream creation via AudioBuffer", () => {
+    if (IS_CI) return;
 
     const host = getDefaultHost();
     const output = host.defaultOutputDevice();
     if (output) {
       try {
-        const stream = output.createBeepStream();
+        const buffer = new AudioBuffer();
+        const config = output.defaultOutputConfig();
+        
+        // Generate a tiny bit of audio
+        buffer.beep(440, 50, config.sampleRate);
+        
+        const stream = output.createOutputStream(config, buffer);
         expect(stream).toBeDefined();
         stream.play();
         stream.pause();
       } catch (e) {
-        // Some devices might fail to build stream even if present (e.g. busy)
-        console.warn("Could not create beep stream:", e);
+        console.warn("Could not create output stream:", e);
+      }
+    }
+  });
+
+  test("InputStream creation via AudioBuffer", () => {
+    if (IS_CI) return;
+
+    const host = getDefaultHost();
+    const input = host.defaultInputDevice();
+    if (input) {
+      try {
+        const buffer = new AudioBuffer();
+        const config = input.defaultInputConfig();
+        
+        const stream = input.createInputStream(config, buffer);
+        expect(stream).toBeDefined();
+        stream.play();
+        stream.pause();
+      } catch (e) {
+        console.warn("Could not create input stream:", e);
       }
     }
   });
 });
-

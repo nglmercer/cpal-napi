@@ -1,18 +1,38 @@
 import { availableHosts, getDefaultHost } from "cpal-napi";
 
-export function getlistAll() {
-  console.log("=== Audio Diagnostics ===");
+/**
+ * Diagnostic utility to list all available audio hosts and devices
+ */
+export function listAllDevices() {
+  console.log("=== CPAL Audio Diagnostics ===");
   
   const hosts = availableHosts();
-  console.log(`\nAvailable Hosts`,hosts);
-  const defaultHost = getDefaultHost();
-  console.log(`\nDefault Host`,defaultHost.name());
+  console.log(`\n[Available Audio Hosts] (${hosts.length})`);
+  hosts.forEach((host, i) => console.log(`  ${i + 1}. ${host}`));
 
-  const outputDevices = defaultHost.devices();
-  console.log(`\nDevices for ${defaultHost.name()} (${outputDevices.length}):`);
+  const defaultHost = getDefaultHost();
+  console.log(`\n[Default Host]: ${defaultHost.name()}`);
+
+  const devices = defaultHost.devices();
+  console.log(`\n[Devices for ${defaultHost.name()}] (${devices.length}):`);
   
-  console.log(outputDevices);
-  return {outputDevices,hosts,defaultHost};
+  devices.forEach((device, index) => {
+    try {
+      const name = device.name();
+      console.log(`  ${index + 1}. ${name}`);
+      // Only log brief info to avoid excessive output
+    } catch (e) {
+      console.log(`  ${index + 1}. [Error getting device name]`);
+    }
+  });
+
+  return { devices, hosts, defaultHost };
 }
 
-getlistAll();
+// Execute if run directly
+if (import.meta.url.endsWith(process.argv[1]?.replace(/\\/g, '/'))) {
+  listAllDevices();
+} else if (process.argv[1]?.includes('list_devices')) {
+    // Fallback for some execution environments
+    listAllDevices();
+}

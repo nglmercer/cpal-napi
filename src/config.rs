@@ -32,14 +32,27 @@ pub struct StreamConfig {
     pub channels: u16,
     pub sample_rate: u32,
     pub buffer_size: BufferSize,
+    pub sample_format: SampleFormat,
 }
 
 impl From<cpal::StreamConfig> for StreamConfig {
     fn from(c: cpal::StreamConfig) -> Self {
         StreamConfig {
             channels: c.channels,
-            sample_rate: c.sample_rate,
+            sample_rate: c.sample_rate.0,
             buffer_size: c.buffer_size.into(),
+            sample_format: SampleFormat::F32, // Default to F32 when converting from cpal::StreamConfig which doesn't have format
+        }
+    }
+}
+
+impl From<cpal::SupportedStreamConfig> for StreamConfig {
+    fn from(c: cpal::SupportedStreamConfig) -> Self {
+        StreamConfig {
+            channels: c.channels(),
+            sample_rate: c.sample_rate().0,
+            buffer_size: (*c.buffer_size()).into(),
+            sample_format: c.sample_format().into(),
         }
     }
 }

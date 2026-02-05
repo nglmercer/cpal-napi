@@ -1,47 +1,56 @@
-import {
-  getDefaultHost,
-  availableHosts,
-} from "cpal-napi";
-import { LOG_MESSAGES } from "./core/common.js";
-//import { testBeepStream } from "./core/beep.js";
+import { getDefaultHost, availableHosts } from "cpal-napi";
+import { AUDIO_SETTINGS, AUDIO_LOGS, logDeviceInfo } from "./core/common.js";
+import { testBeepStream } from "./core/beep.js";
 import { testInputStream, testCustomBufferStream } from "./core/recording.js";
 
-// --- Main execution ---
-async function runDevExample() {
+/**
+ * Main Orchestrator for the Audio Examples
+ */
+async function main() {
   try {
-    console.log("Detecting audio hosts...");
+    console.log("=== CPAL-NAPI Audio Examples ===");
     console.log("Available Hosts:", availableHosts());
     
     const host = getDefaultHost();
     console.log("Current Host:", host.name());
 
-    const output = host.defaultOutputDevice();
-    const input = host.defaultInputDevice();
+    const outputDevice = host.defaultOutputDevice();
+    const inputDevice = host.defaultInputDevice();
 
-    if (output) {
-      console.log("Using Output Device:", output.name());
-      const config = output.defaultOutputConfig();
-      console.log("Default Output Configuration:", config);
-
-      // Execute output tests
-      //await testBeepStream(output);
-      //await testCustomBufferStream(output, config);
+    // 1. Beep Test (Output only)
+    if (outputDevice) {
+      await testBeepStream(outputDevice);
     } else {
-      console.warn(LOG_MESSAGES.NO_DEVICE);
+      console.warn(AUDIO_LOGS.NOT_FOUND('Output'));
     }
 
-    if (input && output) {
-      const { buffer } = await testInputStream(input);
-      const outConfig = output.defaultOutputConfig();
-      await testCustomBufferStream(output, outConfig, buffer);
-    } else if (!input) {
-      console.warn(LOG_MESSAGES.NO_INPUT_DEVICE);
+    // 2. Full Recording-Playback Cycle (Input -> Output)
+    if (inputDevice && outputDevice) {
+      // Record a snippet
+      const { buffer, config: inputConfig } = await testInputStream(inputDevice);
+      
+      // Play it back using the output device's default config
+      const outputConfig = outputDevice.defaultOutputConfig();
+      await testCustomBufferStream(outputDevice, outputConfig, buffer);
+    } else {
+      if (!inputDevice) console.warn(AUDIO_LOGS.NOT_FOUND('Input'));
+      
+      // If no input, just demonstrate custom buffer generation
+      if (outputDevice) {
+        const config = outputDevice.defaultOutputConfig();
+        await testCustomBufferStream(outputDevice, config);
+      }
     }
-    
-    console.log(LOG_MESSAGES.FINISHED);
+
+    console.log("\nAll tests completed successfully.");
   } catch (err) {
-    console.error("Critical error during audio test:", err);
+    console.error("\n[CRITICAL ERROR]", err instanceof Error ? err.message : err);
+    process.exit(1);
   }
 }
 
-runDevExample().catch(console.error);
+// Start the tests
+main().catch((err) => {
+  console.error("Unhandle exception:", err);
+  process.exit(1);
+});

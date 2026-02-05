@@ -44,3 +44,46 @@ export async function runStream(stream: AudioStream, durationMs: number) {
 export function logDeviceInfo(device: AudioDevice, type: 'Input' | 'Output') {
   console.log(AUDIO_LOGS.DEVICE_INFO(device.name(), type));
 }
+
+/**
+ * Encodes Float32 audio samples into a 16-bit PCM WAV file
+ */
+export function writeWavFile(filename: string, samples: Float32Array, sampleRate: number, channels: number) {
+  const bytesPerSample = 2; // 16-bit PCM
+  const blockAlign = channels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = samples.length * bytesPerSample;
+  
+  const buffer = Buffer.alloc(44 + dataSize);
+  
+  // RIFF Header
+  buffer.write("RIFF", 0);
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write("WAVE", 8);
+  
+  // fmt Subchunk
+  buffer.write("fmt ", 12);
+  buffer.writeUInt32LE(16, 16); // Subchunk1Size
+  buffer.writeUInt16LE(1, 20); // AudioFormat (1 = PCM)
+  buffer.writeUInt16LE(channels, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(byteRate, 28);
+  buffer.writeUInt16LE(blockAlign, 32);
+  buffer.writeUInt16LE(16, 34); // BitsPerSample
+  
+  // data Subchunk
+  buffer.write("data", 36);
+  buffer.writeUInt32LE(dataSize, 40);
+  
+  // PCM Data
+  for (let i = 0; i < samples.length; i++) {
+    // Clamp to [-1, 1] and convert to Int16
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    const val = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    buffer.writeInt16LE(Math.floor(val), 44 + i * bytesPerSample);
+  }
+  
+  import("node:fs").then(fs => {
+    fs.default.writeFileSync(filename, buffer);
+  });
+}

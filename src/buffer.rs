@@ -53,6 +53,13 @@ impl AudioBuffer {
         let buffer = self.inner.lock().unwrap();
         buffer.len() as u32
     }
+
+    #[napi]
+    pub fn get_data(&self) -> Float32Array {
+        let buffer = self.inner.lock().unwrap();
+        let vec: Vec<f32> = buffer.iter().cloned().collect();
+        Float32Array::from(vec)
+    }
 }
 
 #[cfg(test)]
