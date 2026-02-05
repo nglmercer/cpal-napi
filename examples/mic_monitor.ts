@@ -1,6 +1,7 @@
 import { AudioEngine } from "../lib/core/AudioEngine.js";
 import { AudioCable } from "../lib/core/Cable.js";
 import { DeviceScanner } from "../lib/utils/Scanner.js";
+import { VolumeMeter } from "../lib/utils/Meter.js";
 
 async function main() {
   const engine = AudioEngine.getInstance();
@@ -31,9 +32,6 @@ async function main() {
 
   console.log("Starting monitor... Press Ctrl+C to stop.");
   cable.start();
-
-  const { cleanupHostLogs } = await import("../index.js");
-
   // Keep alive
   let isStopping = false;
   process.on('SIGINT', () => {
@@ -43,7 +41,6 @@ async function main() {
     console.log("\nStopping...");
     clearInterval(vizInterval);
     cable.stop();
-    cleanupHostLogs();
     
     console.log("Cleanup complete. Exiting...");
     // Give native threads a tiny bit of time to settle before process exit
@@ -53,7 +50,6 @@ async function main() {
   });
 
   // Visualization
-  const { VolumeMeter } = await import("../lib/utils/Meter.js");
   
   const vizInterval = setInterval(() => {
     if (cable.isRunning()) {

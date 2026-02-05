@@ -29,7 +29,7 @@ impl StderrGag {
         unsafe {
             let original_fd = libc::dup(libc::STDERR_FILENO);
             let null_file = b"/dev/null\0";
-            let null_fd = libc::open(null_file.as_ptr() as *const i8, libc::O_WRONLY);
+            let null_fd = libc::open(null_file.as_ptr() as *const c_char, libc::O_WRONLY);
             if null_fd != -1 {
                 libc::dup2(null_fd, libc::STDERR_FILENO);
                 libc::close(null_fd);
