@@ -3,14 +3,26 @@ use napi_derive::napi;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
+type BufferInner = Arc<Mutex<VecDeque<f32>>>;
+type LinksVec = Arc<Mutex<Vec<BufferInner>>>;
+
 #[napi]
 pub struct AudioBuffer {
-    pub(crate) inner: Arc<Mutex<VecDeque<f32>>>,
+    pub(crate) inner: BufferInner,
+    pub(crate) links: LinksVec,
 }
 
 impl Default for AudioBuffer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Drop for AudioBuffer {
+    fn drop(&mut self) {
+        if let Ok(mut links) = self.links.lock() {
+            links.clear();
+        }
     }
 }
 
@@ -20,13 +32,39 @@ impl AudioBuffer {
     pub fn new() -> Self {
         AudioBuffer {
             inner: Arc::new(Mutex::new(VecDeque::with_capacity(44100))),
+            links: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    #[napi]
+    pub fn clone_link(&self) -> Self {
+        let new_inner = Arc::new(Mutex::new(VecDeque::with_capacity(44100)));
+        let mut links = self.links.lock().unwrap();
+        links.push(new_inner.clone());
+        AudioBuffer {
+            inner: new_inner,
+            links: Arc::new(Mutex::new(Vec::new())), // The clone doesn't inherit parent's links
         }
     }
 
     #[napi]
     pub fn push(&self, data: Float32Array) {
-        let mut buffer = self.inner.lock().unwrap();
-        buffer.extend(data.as_ref());
+        let data_ref = data.as_ref();
+
+        // Push to main buffer
+        {
+            let mut buffer = self.inner.lock().unwrap();
+            buffer.extend(data_ref);
+        }
+
+        // Broadcast to links
+        {
+            let links = self.links.lock().unwrap();
+            for link in links.iter() {
+                let mut buffer = link.lock().unwrap();
+                buffer.extend(data_ref);
+            }
+        }
     }
 
     #[napi]
@@ -39,8 +77,21 @@ impl AudioBuffer {
             let sample = (t * frequency * pi2).sin() as f32;
             samples.push(sample);
         }
-        let mut buffer = self.inner.lock().unwrap();
-        buffer.extend(samples);
+
+        // Push to main
+        {
+            let mut buffer = self.inner.lock().unwrap();
+            buffer.extend(&samples);
+        }
+
+        // Push to links
+        {
+            let links = self.links.lock().unwrap();
+            for link in links.iter() {
+                let mut buffer = link.lock().unwrap();
+                buffer.extend(&samples);
+            }
+        }
     }
 
     #[napi]

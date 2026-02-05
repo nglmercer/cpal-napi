@@ -64,4 +64,20 @@ impl AudioStream {
             Err(Error::from_reason("Stream is not initialized"))
         }
     }
+
+    #[napi]
+    pub fn close(&mut self) {
+        if let Some(s) = self.stream.take() {
+            drop(s);
+        }
+    }
+}
+
+impl Drop for AudioStream {
+    fn drop(&mut self) {
+        // Ensure stream is stopped and resources are freed when the object is GC'd
+        if let Some(s) = self.stream.take() {
+            drop(s);
+        }
+    }
 }

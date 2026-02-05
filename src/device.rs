@@ -1,5 +1,6 @@
 use crate::buffer::AudioBuffer;
 use crate::config::{StreamConfig, SupportedStreamConfig};
+use crate::host::StderrGag;
 use crate::stream::AudioStream;
 use cpal::traits::DeviceTrait;
 use napi::bindgen_prelude::*;
@@ -10,6 +11,8 @@ use napi_derive::napi;
 pub enum DeviceDirection {
     Input,
     Output,
+    Both,
+    None,
 }
 
 #[napi]
@@ -32,6 +35,7 @@ pub struct DeviceDescription {
     pub host_id: crate::host::HostId,
     pub max_input_channels: u16,
     pub max_output_channels: u16,
+    pub available: bool,
 }
 
 #[napi]
@@ -84,11 +88,12 @@ impl DeviceDescriptionBuilder {
     pub fn build(&self) -> DeviceDescription {
         DeviceDescription {
             name: self.name.clone().unwrap_or_default(),
-            direction: self.direction.unwrap_or(DeviceDirection::Output),
+            direction: self.direction.unwrap_or(DeviceDirection::None),
             device_type: self.device_type.unwrap_or(DeviceType::Other),
             host_id: self.host_id.unwrap_or(crate::host::HostId::Other),
             max_input_channels: 0,
             max_output_channels: 0,
+            available: false,
         }
     }
 }
@@ -124,6 +129,7 @@ impl AudioDevice {
 
     #[napi]
     pub fn description(&self) -> Result<DeviceDescription> {
+        let _gag = StderrGag::new();
         let name = self.name().unwrap_or_else(|_| "Unknown".to_string());
         let lower_name = name.to_lowercase();
 
@@ -157,18 +163,41 @@ impl AudioDevice {
             .map(|configs| configs.map(|c| c.channels()).max().unwrap_or(0))
             .unwrap_or(0);
 
+        let direction = match (max_input_channels > 0, max_output_channels > 0) {
+            (true, true) => DeviceDirection::Both,
+            (true, false) => DeviceDirection::Input,
+            (false, true) => DeviceDirection::Output,
+            (false, false) => DeviceDirection::None,
+        };
+
+        let available = max_input_channels > 0 || max_output_channels > 0;
+
         Ok(DeviceDescription {
             name,
-            direction: if self.is_input() {
-                DeviceDirection::Input
-            } else {
-                DeviceDirection::Output
-            },
+            direction,
             device_type,
             host_id: self.host_id,
             max_input_channels,
             max_output_channels,
+            available,
         })
+    }
+
+    #[napi]
+    pub fn is_available(&self) -> bool {
+        let max_input_channels = self
+            .inner
+            .supported_input_configs()
+            .map(|configs| configs.map(|c| c.channels()).max().unwrap_or(0))
+            .unwrap_or(0);
+
+        let max_output_channels = self
+            .inner
+            .supported_output_configs()
+            .map(|configs| configs.map(|c| c.channels()).max().unwrap_or(0))
+            .unwrap_or(0);
+
+        max_input_channels > 0 || max_output_channels > 0
     }
 
     #[napi]
@@ -215,6 +244,7 @@ impl AudioDevice {
 
     #[napi]
     pub fn supported_output_configs(&self) -> Result<Vec<SupportedStreamConfig>> {
+        let _gag = StderrGag::new();
         let configs = self.inner.supported_output_configs().map_err(|e| {
             Error::from_reason(format!("Failed to get supported output configs: {}", e))
         })?;
@@ -223,6 +253,7 @@ impl AudioDevice {
 
     #[napi]
     pub fn supported_input_configs(&self) -> Result<Vec<SupportedStreamConfig>> {
+        let _gag = StderrGag::new();
         let configs = self.inner.supported_input_configs().map_err(|e| {
             Error::from_reason(format!("Failed to get supported input configs: {}", e))
         })?;
@@ -243,7 +274,12 @@ impl AudioDevice {
 
         let channels = config.channels as usize;
         let shared_buffer = buffer.inner.clone();
-        let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
+        let err_fn = |err: cpal::StreamError| {
+            let msg = err.to_string();
+            if !msg.contains("underrun") && !msg.contains("overrun") {
+                eprintln!("an error occurred on stream: {}", err);
+            }
+        };
 
         let sample_format = config.sample_format.into();
 
@@ -301,7 +337,12 @@ impl AudioDevice {
 
         let channels = config.channels as usize;
         let shared_buffer = buffer.inner.clone();
-        let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
+        let err_fn = |err: cpal::StreamError| {
+            let msg = err.to_string();
+            if !msg.contains("underrun") && !msg.contains("overrun") {
+                eprintln!("an error occurred on stream: {}", err);
+            }
+        };
 
         let sample_format = config.sample_format.into();
 

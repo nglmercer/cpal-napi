@@ -14,6 +14,69 @@ extern "C" {
 }
 
 #[cfg(target_os = "linux")]
+static GAG_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(target_os = "linux")]
+pub struct StderrGag {
+    original_fd: i32,
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(target_os = "linux")]
+impl StderrGag {
+    pub fn new() -> Self {
+        let guard = GAG_MUTEX.lock().unwrap();
+        unsafe {
+            let original_fd = libc::dup(libc::STDERR_FILENO);
+            let null_file = b"/dev/null\0";
+            let null_fd = libc::open(null_file.as_ptr() as *const i8, libc::O_WRONLY);
+            if null_fd != -1 {
+                libc::dup2(null_fd, libc::STDERR_FILENO);
+                libc::close(null_fd);
+            }
+            StderrGag {
+                original_fd,
+                _guard: guard,
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Default for StderrGag {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for StderrGag {
+    fn drop(&mut self) {
+        unsafe {
+            libc::dup2(self.original_fd, libc::STDERR_FILENO);
+            libc::close(self.original_fd);
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub struct StderrGag;
+
+#[cfg(not(target_os = "linux"))]
+impl StderrGag {
+    pub fn new() -> Self {
+        StderrGag
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+impl Default for StderrGag {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(target_os = "linux")]
 unsafe extern "C" fn silent_error_handler(
     _file: *const c_char,
     _line: c_int,
@@ -111,8 +174,21 @@ impl AudioHost {
 #[napi]
 pub fn silence_host_logs() {
     #[cfg(target_os = "linux")]
-    unsafe {
-        snd_lib_error_set_handler(Some(silent_error_handler));
+    {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            // Prevent JACK from trying to start a server when probing
+            std::env::set_var("JACK_NO_START_SERVER", "1");
+            // Some distributions use these
+            std::env::set_var("JACK_START_SERVER", "0");
+            // Enable ALSA thread safety to prevent double-frees/corruption
+            // This MUST be set before any ALSA function is called.
+            std::env::set_var("LIBASOUND_THREAD_SAFE", "1");
+
+            unsafe {
+                snd_lib_error_set_handler(Some(silent_error_handler));
+            }
+        });
     }
 }
 
@@ -126,6 +202,7 @@ pub fn get_default_host() -> AudioHost {
 
 #[napi]
 pub fn host_from_id(id: HostId) -> Result<AudioHost> {
+    silence_host_logs();
     let cpal_id = match id {
         #[cfg(target_os = "linux")]
         HostId::Alsa => Some(cpal::HostId::Alsa),
@@ -166,6 +243,7 @@ pub fn host_from_id(id: HostId) -> Result<AudioHost> {
 
 #[napi]
 pub fn available_hosts() -> Vec<String> {
+    silence_host_logs();
     cpal::available_hosts()
         .iter()
         .map(|h| h.name().to_string())
@@ -174,6 +252,7 @@ pub fn available_hosts() -> Vec<String> {
 
 #[napi]
 pub fn get_all_hosts() -> Vec<HostId> {
+    silence_host_logs();
     vec![
         HostId::Alsa,
         HostId::Jack,
