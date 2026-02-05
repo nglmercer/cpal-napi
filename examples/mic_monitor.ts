@@ -34,7 +34,7 @@ async function main() {
   // Helper to test a pair
   const testPair = (input: AudioDevice, output: AudioDevice): AudioCable | null => {
     try {
-      return new AudioCable(input, output, { bufferSize: 256 });
+      return new AudioCable(input, output, { bufferSize: 1024 });
     } catch (e) {
       return null;
     }
@@ -84,10 +84,19 @@ async function main() {
   // Visualization
   const vizInterval = setInterval(() => {
     if (cable.isRunning()) {
-      const level = VolumeMeter.getPeak(cable.getBuffer());
+      const buffer = cable.getBuffer();
+      const level = VolumeMeter.getPeak(buffer);
       const bars = "#".repeat(Math.floor(level * 50));
-      const bufferLen = cable.getBuffer().length();
-      process.stdout.write(`\rVolume: [${bars.padEnd(50)}] | Buffer: ${bufferLen} samples    `);
+      const bufferLen = buffer.length();
+      const peakLevel = buffer.getPeakLevel();
+      
+      // Clear buffer if it only contains silence (helps with phantom buffer)
+      // Threshold should match the noise gate in Rust (0.015)
+      if (bufferLen > 0 && peakLevel < 0.015) {
+        buffer.clearIfSilent(0.015);
+      }
+      
+      process.stdout.write(`\rVolume: [${bars.padEnd(50)}] | Buffer: ${bufferLen} samples | Peak: ${peakLevel.toFixed(4)}    `);
     }
   }, 50);
 

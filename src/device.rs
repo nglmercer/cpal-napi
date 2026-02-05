@@ -407,15 +407,39 @@ impl AudioDevice {
 
         let sample_format = config.sample_format.into();
 
+        // Noise gate threshold - samples below this amplitude are treated as silence
+        // This prevents phantom buffer/noise when microphone is muted or silent
+        // Set above typical microphone noise floor (~0.008) to filter out hardware noise
+        const NOISE_GATE_THRESHOLD: f32 = 0.015;
+
         macro_rules! build_input {
             ($t:ty) => {
                 self.inner.build_input_stream(
                     &cpal_config,
                     move |data: &[$t], _| {
+                        // First, check if the entire chunk is silence
+                        // This is more efficient than checking each sample individually
+                        let has_signal = data.iter().any(|sample| {
+                            let value = cpal::Sample::to_sample::<f32>(*sample);
+                            value.abs() >= NOISE_GATE_THRESHOLD
+                        });
+
+                        // If the entire chunk is silence, don't add anything to the buffer
+                        if !has_signal {
+                            return;
+                        }
+
                         let mut buffer = shared_buffer.lock().unwrap();
                         for frame in data.chunks(channels) {
                             if let Some(sample) = frame.first() {
-                                buffer.push_back(cpal::Sample::to_sample::<f32>(*sample));
+                                let value = cpal::Sample::to_sample::<f32>(*sample);
+                                // Apply noise gate: if the sample is below threshold, treat as silence
+                                let gated_value = if value.abs() < NOISE_GATE_THRESHOLD {
+                                    0.0
+                                } else {
+                                    value
+                                };
+                                buffer.push_back(gated_value);
                             }
                         }
                     },

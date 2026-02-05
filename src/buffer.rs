@@ -112,6 +112,36 @@ impl AudioBuffer {
         let vec: Vec<f32> = buffer.iter().cloned().collect();
         Float32Array::from(vec)
     }
+
+    /// Check if the buffer contains only silence (all samples below threshold)
+    #[napi]
+    pub fn is_silent(&self, threshold: Option<f64>) -> bool {
+        let threshold = threshold.unwrap_or(0.001) as f32;
+        let buffer = self.inner.lock().unwrap();
+        buffer.iter().all(|&s| s.abs() < threshold)
+    }
+
+    /// Get the peak level (maximum absolute amplitude) of the buffer
+    #[napi]
+    pub fn get_peak_level(&self) -> f32 {
+        let buffer = self.inner.lock().unwrap();
+        buffer.iter().map(|s| s.abs()).fold(0.0_f32, f32::max)
+    }
+
+    /// Clear the buffer if all samples are below the silence threshold
+    /// Returns true if the buffer was cleared, false otherwise
+    #[napi]
+    pub fn clear_if_silent(&self, threshold: Option<f64>) -> bool {
+        let threshold = threshold.unwrap_or(0.001) as f32;
+        let mut buffer = self.inner.lock().unwrap();
+        let is_silent = buffer.iter().all(|&s| s.abs() < threshold);
+        if is_silent {
+            buffer.clear();
+            true
+        } else {
+            false
+        }
+    }
 }
 
 #[cfg(test)]
