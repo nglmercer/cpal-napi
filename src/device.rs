@@ -17,23 +17,10 @@ pub enum DeviceDirection {
     None,
 }
 
-#[napi]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DeviceType {
-    Internal,
-    Usb,
-    Bluetooth,
-    Network,
-    Firewire,
-    Virtual,
-    Other,
-}
-
 #[napi(object)]
 pub struct DeviceDescription {
     pub name: String,
     pub direction: DeviceDirection,
-    pub device_type: DeviceType,
     pub host_id: crate::host::HostId,
     pub max_input_channels: u16,
     pub max_output_channels: u16,
@@ -45,7 +32,6 @@ pub struct DeviceDescription {
 pub struct DeviceDescriptionBuilder {
     name: Option<String>,
     direction: Option<DeviceDirection>,
-    device_type: Option<DeviceType>,
     host_id: Option<crate::host::HostId>,
 }
 
@@ -62,7 +48,6 @@ impl DeviceDescriptionBuilder {
         DeviceDescriptionBuilder {
             name: None,
             direction: None,
-            device_type: None,
             host_id: None,
         }
     }
@@ -78,11 +63,6 @@ impl DeviceDescriptionBuilder {
     }
 
     #[napi]
-    pub fn device_type(&mut self, device_type: DeviceType) {
-        self.device_type = Some(device_type);
-    }
-
-    #[napi]
     pub fn host_id(&mut self, host_id: crate::host::HostId) {
         self.host_id = Some(host_id);
     }
@@ -92,7 +72,6 @@ impl DeviceDescriptionBuilder {
         DeviceDescription {
             name: self.name.clone().unwrap_or_default(),
             direction: self.direction.unwrap_or(DeviceDirection::None),
-            device_type: self.device_type.unwrap_or(DeviceType::Other),
             host_id: self.host_id.unwrap_or(crate::host::HostId::Other),
             max_input_channels: 0,
             max_output_channels: 0,
@@ -135,25 +114,6 @@ impl AudioDevice {
     pub fn description(&self) -> Result<DeviceDescription> {
         let _gag = StderrGag::maybe_gag();
         let name = self.name().unwrap_or_else(|_| "Unknown".to_string());
-        let lower_name = name.to_lowercase();
-
-        let device_type = if lower_name.contains("usb") {
-            DeviceType::Usb
-        } else if lower_name.contains("bluetooth") || lower_name.contains("bluez") {
-            DeviceType::Bluetooth
-        } else if lower_name.contains("network") {
-            DeviceType::Network
-        } else if lower_name.contains("virtual")
-            || lower_name.contains("pipewire")
-            || lower_name.contains("jack")
-            || lower_name.contains("discard")
-        {
-            DeviceType::Virtual
-        } else if lower_name.contains("firewire") {
-            DeviceType::Firewire
-        } else {
-            DeviceType::Other
-        };
 
         let max_input_channels = self
             .inner
@@ -178,7 +138,9 @@ impl AudioDevice {
             #[cfg(target_os = "windows")]
             {
                 if self.host_id == crate::host::HostId::Wasapi {
-                    max_output_channels > 0
+                    // In WASAPI, loopback devices are input devices that capture output.
+                    // CPAL explicitly includes "Loopback" in their names.
+                    max_input_channels > 0 && name.to_lowercase().contains("loopback")
                 } else {
                     false
                 }
@@ -192,7 +154,6 @@ impl AudioDevice {
         Ok(DeviceDescription {
             name,
             direction,
-            device_type,
             host_id: self.host_id,
             max_input_channels,
             max_output_channels,
@@ -239,12 +200,25 @@ impl AudioDevice {
 
     #[napi]
     pub fn name(&self) -> Result<String> {
-        Ok(self
+        let name = self
             .inner
             .description()
             .map_err(|e| Error::from_reason(format!("Failed to get name: {}", e)))?
             .name()
-            .to_string())
+            .to_string();
+
+        #[cfg(target_os = "windows")]
+        {
+            if self.host_id == crate::host::HostId::Wasapi {
+                if let Ok(id_obj) = self.id() {
+                    if let Some(better) = get_windows_friendly_name(&id_obj.id) {
+                        return Ok(better);
+                    }
+                }
+            }
+        }
+
+        Ok(name)
     }
 
     #[napi]
@@ -565,5 +539,83 @@ impl AudioDevice {
         })?;
 
         Ok(AudioStream::new(stream))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn get_windows_friendly_name(device_id: &str) -> Option<String> {
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ};
+    use windows::Win32::Foundation::RPC_E_CHANGED_MODE;
+    use windows::Win32::Media::Audio::{IMMDeviceEnumerator, MMDeviceEnumerator, IMMDevice};
+    use windows::Win32::System::Com::StructuredStorage::PropVariantToStringAlloc;
+    use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, PROPERTYKEY};
+    use windows::Win32::Devices::FunctionDiscovery::{PKEY_Device_FriendlyName, PKEY_Device_DeviceDesc, PKEY_DeviceInterface_FriendlyName};
+
+    unsafe {
+        let hr = CoInitializeEx(None, COINIT_MULTITHREADED);
+        if hr.is_err() && hr != RPC_E_CHANGED_MODE {
+            return None;
+        }
+        
+        let enumerator: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
+        
+        let device_id_h = windows::core::HSTRING::from(device_id);
+        let device: IMMDevice = enumerator.GetDevice(&device_id_h).ok()?;
+        let store: IPropertyStore = device.OpenPropertyStore(STGM_READ).ok()?;
+        
+        let get_prop = |key: &PROPERTYKEY| -> Option<String> {
+            if let Ok(prop) = store.GetValue(key) {
+                if let Ok(ptr) = PropVariantToStringAlloc(&prop) {
+                    let s = ptr.to_string().ok().filter(|s| !s.trim().is_empty());
+                    windows::Win32::System::Com::CoTaskMemFree(Some(ptr.0 as _));
+                    return s;
+                }
+            }
+            None
+        };
+
+        // Standard Windows Audio properties
+        let endpoint_name = get_prop(&PKEY_Device_FriendlyName); // e.g., "Microphone" or "Altavoces"
+        let hardware_name = get_prop(&PKEY_Device_DeviceDesc);   // e.g., "High Definition Audio Device"
+        let interface_name = get_prop(&PKEY_DeviceInterface_FriendlyName);
+
+        // Attempt to find a more specific hardware name if DeviceDesc is generic
+        let mut best_hardware = hardware_name;
+        
+        // DEVPKEY_Device_BusReportedDeviceDescription: {540b947e-8b40-45bc-a8a2-6a0b894cbda2}, 4
+        // Usually contains the manufacturer-reported model name (e.g., "Comica_ADCaster C1")
+        let bus_desc = {
+            let key = PROPERTYKEY {
+                fmtid: windows::core::GUID::from_u128(0x540b947e_8b40_45bc_a8a2_6a0b894cbda2),
+                pid: 4,
+            };
+            get_prop(&key)
+        };
+
+        if let Some(ref b) = bus_desc {
+            if let Some(ref h) = best_hardware {
+                // If bus_desc is more specific than current hardware_name, use it.
+                if b.len() > h.len() {
+                     best_hardware = Some(b.clone());
+                }
+            } else {
+                best_hardware = Some(b.clone());
+            }
+        }
+
+        match (endpoint_name, best_hardware) {
+            (Some(e), Some(h)) => {
+                if e == h { Some(e) }
+                else if e.contains(&h) { Some(e) }
+                else if h.contains(&e) { Some(h) }
+                else { 
+                    // Combine them if they are distinct
+                    Some(format!("{} ({})", e, h)) 
+                }
+            },
+            (Some(e), None) => Some(e),
+            (None, Some(h)) => Some(h),
+            (None, None) => interface_name,
+        }
     }
 }

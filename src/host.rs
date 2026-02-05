@@ -122,7 +122,15 @@ pub struct AudioHost {
 impl AudioHost {
     #[napi]
     pub fn name(&self) -> String {
-        self.inner.id().name().to_string()
+        let name = self.inner.id().name().to_string();
+        match name.to_lowercase().as_str() {
+            "wasapi" => "WASAPI".to_string(),
+            "alsa" => "ALSA".to_string(),
+            "jack" => "JACK".to_string(),
+            "asio" => "ASIO".to_string(),
+            "coreaudio" => "CoreAudio".to_string(),
+            _ => name,
+        }
     }
 
     #[napi]
@@ -246,7 +254,7 @@ pub fn host_from_id(id: HostId) -> Result<AudioHost> {
 }
 
 #[napi]
-pub fn available_hosts() -> Vec<String> {
+pub fn get_available_host_names() -> Vec<String> {
     cpal::available_hosts()
         .iter()
         .map(|h| h.name().to_string())
@@ -254,7 +262,7 @@ pub fn available_hosts() -> Vec<String> {
 }
 
 #[napi]
-pub fn get_all_hosts() -> Vec<HostId> {
+pub fn get_supported_hosts() -> Vec<HostId> {
     vec![
         HostId::Alsa,
         HostId::Jack,
@@ -264,24 +272,19 @@ pub fn get_all_hosts() -> Vec<HostId> {
         HostId::Emscripten,
     ]
 }
-
-#[napi]
-pub fn get_all_hosts_list() -> Vec<HostId> {
-    get_all_hosts()
-}
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_available_hosts() {
-        let hosts = available_hosts();
+        let hosts = get_available_host_names();
         assert!(!hosts.is_empty());
     }
 
     #[test]
     fn test_host_from_id() {
-        let hosts = get_all_hosts_list();
+        let hosts = get_supported_hosts();
         for id in hosts {
             // This might fail if the host is not available on the current platform,
             // but we can at least try to see if it doesn't panic.

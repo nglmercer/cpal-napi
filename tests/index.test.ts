@@ -1,10 +1,8 @@
 import { expect, test, describe } from "bun:test";
 import {
-  availableHosts,
   getDefaultHost,
   AudioBuffer,
   hostFromId,
-  getAllHosts,
   HostId,
   I24,
   U24,
@@ -13,47 +11,11 @@ import {
 const IS_CI = process.env.GITHUB_ACTIONS === "true";
 
 describe("Audio Library Tests", () => {
-  test("availableHosts should return an array", () => {
-    const hosts = availableHosts();
-    expect(Array.isArray(hosts)).toBe(true);
-    expect(hosts.length).toBeGreaterThan(0);
-  });
 
   test("getDefaultHost should return a host with a name", () => {
     const host = getDefaultHost();
     expect(host).toBeDefined();
     expect(typeof host.name()).toBe("string");
-  });
-
-  test("getAllHosts should return a list of HostId", () => {
-    const hosts = getAllHosts();
-    expect(Array.isArray(hosts)).toBe(true);
-    expect(hosts.length).toBeGreaterThan(0);
-    expect(typeof hosts[0]).toBe("number");
-  });
-
-  test("hostFromId should work for at least one host", () => {
-    const hosts = availableHosts();
-    if (hosts.length > 0) {
-      const allHostIds = [
-        HostId.Alsa,
-        HostId.CoreAudio,
-        HostId.Wasapi,
-        HostId.Jack,
-        HostId.Asio,
-      ];
-      
-      for (const id of allHostIds) {
-        try {
-          const host = hostFromId(id);
-          expect(host).toBeDefined();
-          expect(typeof host.name()).toBe("string");
-          break;
-        } catch (e) {
-          // host might not be available
-        }
-      }
-    }
   });
 
   test("AudioBuffer should push and report length", () => {

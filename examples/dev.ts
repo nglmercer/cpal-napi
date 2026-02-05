@@ -1,5 +1,5 @@
-import { getDefaultHost, availableHosts } from "cpal-napi";
-import { AUDIO_SETTINGS, AUDIO_LOGS, logDeviceInfo } from "./core/common.js";
+import { getDefaultHost } from "cpal-napi";
+import { AUDIO_LOGS } from "./core/common.js";
 import { testBeepStream } from "./core/beep.js";
 import { testInputStream, testCustomBufferStream } from "./core/recording.js";
 
@@ -9,7 +9,6 @@ import { testInputStream, testCustomBufferStream } from "./core/recording.js";
 async function main() {
   try {
     console.log("=== CPAL-NAPI Audio Examples ===");
-    console.log("Available Hosts:", availableHosts());
     
     const host = getDefaultHost();
     console.log("Current Host:", host.name());
@@ -27,7 +26,7 @@ async function main() {
     // 2. Full Recording-Playback Cycle (Input -> Output)
     if (inputDevice && outputDevice) {
       // Record a snippet
-      const { buffer, config: inputConfig } = await testInputStream(inputDevice);
+      const { buffer, config } = await testInputStream(inputDevice);
       
       // Play it back using the output device's default config
       const outputConfig = outputDevice.defaultOutputConfig();

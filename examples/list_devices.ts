@@ -1,4 +1,4 @@
-import { availableHosts, getDefaultHost } from "cpal-napi";
+import { getAvailableHostNames, getDefaultHost } from "cpal-napi";
 
 /**
  * Diagnostic utility to list all available audio hosts and devices
@@ -6,7 +6,7 @@ import { availableHosts, getDefaultHost } from "cpal-napi";
 export function listAllDevices() {
   console.log("=== CPAL Audio Diagnostics ===");
   
-  const hosts = availableHosts();
+  const hosts = getAvailableHostNames();
   console.log(`\n[Available Audio Hosts] (${hosts.length})`);
   hosts.forEach((host, i) => console.log(`  ${i + 1}. ${host}`));
 
@@ -19,7 +19,7 @@ export function listAllDevices() {
   devices.forEach((device, index) => {
     try {
       const name = device.name();
-      console.log(`  ${index + 1}. ${name}`,device.description());
+      console.log(`  ${index + 1}. ${name}`, device.description());
       // Only log brief info to avoid excessive output
     } catch (e) {
       console.log(`  ${index + 1}. [Error getting device name]`);
