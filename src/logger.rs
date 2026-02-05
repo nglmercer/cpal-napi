@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use napi_derive::napi;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 static DEBUG_ENABLED: AtomicBool = AtomicBool::new(false);
 static SUPPRESS_ALSA_LOGS: AtomicBool = AtomicBool::new(true);

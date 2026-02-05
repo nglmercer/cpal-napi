@@ -286,7 +286,9 @@ impl AudioDevice {
         &self,
         config: StreamConfig,
         buffer: &AudioBuffer,
-        #[napi(ts_arg_type = "(err: string) => void")] error_callback: Option<Function<(String,), ()>>,
+        #[napi(ts_arg_type = "(err: string) => void")] error_callback: Option<
+            Function<(String,), ()>,
+        >,
     ) -> Result<AudioStream> {
         let cpal_config = cpal::StreamConfig {
             channels: config.channels,
@@ -298,11 +300,10 @@ impl AudioDevice {
         let shared_buffer = buffer.inner.clone();
 
         let tsfn = if let Some(cb) = error_callback {
-            let f = cb.build_threadsafe_function::<String>()
+            let f = cb
+                .build_threadsafe_function::<String>()
                 .callee_handled::<true>()
-                .build_callback(|ctx| {
-                    Ok((ctx.value.clone(),))
-                })?;
+                .build_callback(|ctx| Ok((ctx.value.clone(),)))?;
             Some(f)
         } else {
             None
@@ -371,7 +372,9 @@ impl AudioDevice {
         &self,
         config: StreamConfig,
         buffer: &AudioBuffer,
-        #[napi(ts_arg_type = "(err: string) => void")] error_callback: Option<Function<(String,), ()>>,
+        #[napi(ts_arg_type = "(err: string) => void")] error_callback: Option<
+            Function<(String,), ()>,
+        >,
     ) -> Result<AudioStream> {
         let cpal_config = cpal::StreamConfig {
             channels: config.channels,
@@ -383,11 +386,10 @@ impl AudioDevice {
         let shared_buffer = buffer.inner.clone();
 
         let tsfn = if let Some(cb) = error_callback {
-            let f = cb.build_threadsafe_function::<String>()
+            let f = cb
+                .build_threadsafe_function::<String>()
                 .callee_handled::<true>()
-                .build_callback(|ctx| {
-                    Ok((ctx.value.clone(),))
-                })?;
+                .build_callback(|ctx| Ok((ctx.value.clone(),)))?;
             Some(f)
         } else {
             None

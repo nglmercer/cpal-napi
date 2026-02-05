@@ -73,7 +73,7 @@ impl StderrGag {
     pub fn new() -> Self {
         StderrGag
     }
-    
+
     pub fn maybe_gag() -> Self {
         StderrGag
     }

@@ -2,11 +2,10 @@ import { AudioEngine } from "../lib/core/AudioEngine.js";
 import { AudioCable } from "../lib/core/Cable.js";
 import { DeviceScanner } from "../lib/utils/Scanner.js";
 import { VolumeMeter } from "../lib/utils/Meter.js";
-import { prepareShutdown, setSuppressAlsaLogs } from "../index.js";
+import { prepareShutdown } from "../index.js";
 
 async function main() {
   // Suppress ALSA stderr messages (enabled by default, but can be disabled for debugging)
-  setSuppressAlsaLogs(false); // Uncomment this to see ALSA debug messages
   
   const engine = AudioEngine.getInstance();
   console.log(`Using Host: ${engine.getHost().name()}`);
@@ -56,15 +55,20 @@ async function main() {
     console.log("\nStopping...");
     clearInterval(vizInterval);
     
-    // Stop the cable first
-    cable.stop();
-    
-    // Prepare for shutdown - this gives ALSA time to cleanup
-    console.log("Cleaning up audio resources...");
+    // First, prepare for shutdown - this signals the native code to start cleanup
+    console.log("Preparing shutdown...");
     prepareShutdown();
     
+    // Now stop the cable (streams will use mem::forget during shutdown to prevent double-free)
+    cable.stop();
+    
     console.log("Cleanup complete. Exiting...");
-    process.exit(0);
+    
+    // Use setTimeout to allow any remaining async cleanup to complete
+    // This prevents the runtime from racing with ALSA's cleanup
+    setTimeout(() => {
+      process.exit(0);
+    }, 100);
   });
 }
 

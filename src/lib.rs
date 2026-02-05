@@ -12,9 +12,9 @@ pub use config::*;
 pub use device::*;
 pub use error::*;
 pub use host::*;
+pub use logger::{set_debug, set_suppress_alsa_logs};
 pub use stream::*;
 pub use types::*;
-pub use logger::{set_debug, set_suppress_alsa_logs};
 
 #[cfg(test)]
 mod tests {
