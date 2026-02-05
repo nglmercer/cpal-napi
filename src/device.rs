@@ -609,15 +609,13 @@ fn get_windows_friendly_name(device_id: &str) -> Option<String> {
             get_prop(&key)
         };
 
-        for name in [bus_desc, controller_name] {
-            if let Some(n) = name {
-                if let Some(ref current) = best_hardware {
-                    if n.len() > current.len() {
-                        best_hardware = Some(n);
-                    }
-                } else {
+        for n in [bus_desc, controller_name].into_iter().flatten() {
+            if let Some(ref current) = best_hardware {
+                if n.len() > current.len() {
                     best_hardware = Some(n);
                 }
+            } else {
+                best_hardware = Some(n);
             }
         }
 
@@ -626,9 +624,7 @@ fn get_windows_friendly_name(device_id: &str) -> Option<String> {
                 let e_lower = e.to_lowercase();
                 let h_lower = h.to_lowercase();
 
-                if e_lower == h_lower {
-                    Some(e)
-                } else if e_lower.contains(&h_lower) {
+                if e_lower == h_lower || e_lower.contains(&h_lower) {
                     Some(e)
                 } else if h_lower.contains(&e_lower) {
                     Some(h)
