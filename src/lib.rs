@@ -14,7 +14,7 @@ pub use error::*;
 pub use host::*;
 pub use stream::*;
 pub use types::*;
-pub use logger::set_debug;
+pub use logger::{set_debug, set_suppress_alsa_logs};
 
 #[cfg(test)]
 mod tests {

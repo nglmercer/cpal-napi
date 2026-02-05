@@ -9,12 +9,13 @@ static GAG_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(target_os = "linux")]
 pub struct StderrGag {
-    original_fd: i32,
-    _guard: std::sync::MutexGuard<'static, ()>,
+    original_fd: Option<i32>,
+    _guard: Option<std::sync::MutexGuard<'static, ()>>,
 }
 
 #[cfg(target_os = "linux")]
 impl StderrGag {
+    /// Creates a StderrGag that redirects stderr to /dev/null
     pub fn new() -> Self {
         let guard = GAG_MUTEX.lock().unwrap();
         unsafe {
@@ -26,8 +27,20 @@ impl StderrGag {
                 libc::close(null_fd);
             }
             StderrGag {
-                original_fd,
-                _guard: guard,
+                original_fd: Some(original_fd),
+                _guard: Some(guard),
+            }
+        }
+    }
+
+    /// Creates a StderrGag only if suppression is enabled in logger
+    pub fn maybe_gag() -> Self {
+        if crate::logger::should_suppress_alsa_logs() {
+            Self::new()
+        } else {
+            StderrGag {
+                original_fd: None,
+                _guard: None,
             }
         }
     }
@@ -43,9 +56,11 @@ impl Default for StderrGag {
 #[cfg(target_os = "linux")]
 impl Drop for StderrGag {
     fn drop(&mut self) {
-        unsafe {
-            libc::dup2(self.original_fd, libc::STDERR_FILENO);
-            libc::close(self.original_fd);
+        if let Some(fd) = self.original_fd {
+            unsafe {
+                libc::dup2(fd, libc::STDERR_FILENO);
+                libc::close(fd);
+            }
         }
     }
 }
@@ -56,6 +71,10 @@ pub struct StderrGag;
 #[cfg(not(target_os = "linux"))]
 impl StderrGag {
     pub fn new() -> Self {
+        StderrGag
+    }
+    
+    pub fn maybe_gag() -> Self {
         StderrGag
     }
 }
@@ -107,6 +126,7 @@ impl AudioHost {
 
     #[napi]
     pub fn devices(&self) -> Result<Vec<AudioDevice>> {
+        let _gag = StderrGag::maybe_gag();
         let host_id = self.inner.id().into();
         let devices = self
             .inner
@@ -117,6 +137,7 @@ impl AudioHost {
 
     #[napi]
     pub fn input_devices(&self) -> Result<Vec<AudioDevice>> {
+        let _gag = StderrGag::maybe_gag();
         let host_id = self.inner.id().into();
         let devices = self
             .inner
@@ -127,6 +148,7 @@ impl AudioHost {
 
     #[napi]
     pub fn output_devices(&self) -> Result<Vec<AudioDevice>> {
+        let _gag = StderrGag::maybe_gag();
         let host_id = self.inner.id().into();
         let devices = self
             .inner

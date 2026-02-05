@@ -2,8 +2,12 @@ import { AudioEngine } from "../lib/core/AudioEngine.js";
 import { AudioCable } from "../lib/core/Cable.js";
 import { DeviceScanner } from "../lib/utils/Scanner.js";
 import { VolumeMeter } from "../lib/utils/Meter.js";
+import { prepareShutdown, setSuppressAlsaLogs } from "../index.js";
 
 async function main() {
+  // Suppress ALSA stderr messages (enabled by default, but can be disabled for debugging)
+  setSuppressAlsaLogs(false); // Uncomment this to see ALSA debug messages
+  
   const engine = AudioEngine.getInstance();
   console.log(`Using Host: ${engine.getHost().name()}`);
 
@@ -32,25 +36,8 @@ async function main() {
 
   console.log("Starting monitor... Press Ctrl+C to stop.");
   cable.start();
-  // Keep alive
-  let isStopping = false;
-  process.on('SIGINT', () => {
-    if (isStopping) return;
-    isStopping = true;
-    
-    console.log("\nStopping...");
-    clearInterval(vizInterval);
-    cable.stop();
-    
-    console.log("Cleanup complete. Exiting...");
-    // Give native threads a bit more time to settle before process exit
-    setTimeout(() => {
-       process.exit(0);
-    }, 500);
-  });
 
   // Visualization
-  
   const vizInterval = setInterval(() => {
     if (cable.isRunning()) {
       const level = VolumeMeter.getPeak(cable.getBuffer());
@@ -59,6 +46,27 @@ async function main() {
       process.stdout.write(`\rVolume: [${bars.padEnd(50)}] | Buffer: ${bufferLen} samples    `);
     }
   }, 50);
+
+  // Keep alive
+  let isStopping = false;
+  process.on('SIGINT', async () => {
+    if (isStopping) return;
+    isStopping = true;
+    
+    console.log("\nStopping...");
+    clearInterval(vizInterval);
+    
+    // Stop the cable first
+    cable.stop();
+    
+    // Prepare for shutdown - this gives ALSA time to cleanup
+    console.log("Cleaning up audio resources...");
+    prepareShutdown();
+    
+    console.log("Cleanup complete. Exiting...");
+    process.exit(0);
+  });
 }
 
 main().catch(console.error);
+

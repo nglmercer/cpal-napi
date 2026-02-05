@@ -24,6 +24,7 @@ tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"
 libc = "0.2"
 ctor = "0.2"
+lazy_static = "1.4"
 
 [features]
 asio = ["cpal/asio"]

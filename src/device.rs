@@ -1,5 +1,6 @@
 use crate::buffer::AudioBuffer;
 use crate::config::{StreamConfig, SupportedStreamConfig};
+use crate::host::StderrGag;
 use crate::stream::AudioStream;
 use cpal::traits::DeviceTrait;
 use napi::bindgen_prelude::*;
@@ -132,7 +133,7 @@ impl AudioDevice {
 
     #[napi]
     pub fn description(&self) -> Result<DeviceDescription> {
-        // let _gag = StderrGag::new();
+        let _gag = StderrGag::maybe_gag();
         let name = self.name().unwrap_or_else(|_| "Unknown".to_string());
         let lower_name = name.to_lowercase();
 
@@ -202,6 +203,7 @@ impl AudioDevice {
 
     #[napi]
     pub fn is_available(&self) -> bool {
+        let _gag = StderrGag::maybe_gag();
         let max_input_channels = self
             .inner
             .supported_input_configs()
@@ -219,6 +221,7 @@ impl AudioDevice {
 
     #[napi]
     pub fn is_input(&self) -> bool {
+        let _gag = StderrGag::maybe_gag();
         self.inner
             .supported_input_configs()
             .map(|mut i| i.next().is_some())
@@ -227,6 +230,7 @@ impl AudioDevice {
 
     #[napi]
     pub fn is_output(&self) -> bool {
+        let _gag = StderrGag::maybe_gag();
         self.inner
             .supported_output_configs()
             .map(|mut i| i.next().is_some())
@@ -261,7 +265,7 @@ impl AudioDevice {
 
     #[napi]
     pub fn supported_output_configs(&self) -> Result<Vec<SupportedStreamConfig>> {
-        // let _gag = StderrGag::new();
+        let _gag = StderrGag::maybe_gag();
         let configs = self.inner.supported_output_configs().map_err(|e| {
             Error::from_reason(format!("Failed to get supported output configs: {}", e))
         })?;
@@ -270,7 +274,7 @@ impl AudioDevice {
 
     #[napi]
     pub fn supported_input_configs(&self) -> Result<Vec<SupportedStreamConfig>> {
-        // let _gag = StderrGag::new();
+        let _gag = StderrGag::maybe_gag();
         let configs = self.inner.supported_input_configs().map_err(|e| {
             Error::from_reason(format!("Failed to get supported input configs: {}", e))
         })?;
