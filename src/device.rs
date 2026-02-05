@@ -24,24 +24,14 @@ pub enum DeviceType {
     Other,
 }
 
-#[napi]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InterfaceType {
-    Alsa,
-    Jack,
-    Wasapi,
-    Asio,
-    CoreAudio,
-    Emscripten,
-    Other,
-}
-
 #[napi(object)]
 pub struct DeviceDescription {
     pub name: String,
     pub direction: DeviceDirection,
     pub device_type: DeviceType,
-    pub interface_type: InterfaceType,
+    pub host_id: crate::host::HostId,
+    pub max_input_channels: u16,
+    pub max_output_channels: u16,
 }
 
 #[napi]
@@ -49,7 +39,7 @@ pub struct DeviceDescriptionBuilder {
     name: Option<String>,
     direction: Option<DeviceDirection>,
     device_type: Option<DeviceType>,
-    interface_type: Option<InterfaceType>,
+    host_id: Option<crate::host::HostId>,
 }
 
 impl Default for DeviceDescriptionBuilder {
@@ -66,7 +56,7 @@ impl DeviceDescriptionBuilder {
             name: None,
             direction: None,
             device_type: None,
-            interface_type: None,
+            host_id: None,
         }
     }
 
@@ -86,8 +76,8 @@ impl DeviceDescriptionBuilder {
     }
 
     #[napi]
-    pub fn interface_type(&mut self, interface_type: InterfaceType) {
-        self.interface_type = Some(interface_type);
+    pub fn host_id(&mut self, host_id: crate::host::HostId) {
+        self.host_id = Some(host_id);
     }
 
     #[napi]
@@ -96,7 +86,9 @@ impl DeviceDescriptionBuilder {
             name: self.name.clone().unwrap_or_default(),
             direction: self.direction.unwrap_or(DeviceDirection::Output),
             device_type: self.device_type.unwrap_or(DeviceType::Other),
-            interface_type: self.interface_type.unwrap_or(InterfaceType::Other),
+            host_id: self.host_id.unwrap_or(crate::host::HostId::Other),
+            max_input_channels: 0,
+            max_output_channels: 0,
         }
     }
 }
@@ -104,6 +96,7 @@ impl DeviceDescriptionBuilder {
 #[napi]
 pub struct AudioDevice {
     pub(crate) inner: cpal::Device,
+    pub(crate) host_id: crate::host::HostId,
 }
 
 #[napi(object)]
@@ -132,6 +125,37 @@ impl AudioDevice {
     #[napi]
     pub fn description(&self) -> Result<DeviceDescription> {
         let name = self.name().unwrap_or_else(|_| "Unknown".to_string());
+        let lower_name = name.to_lowercase();
+
+        let device_type = if lower_name.contains("usb") {
+            DeviceType::Usb
+        } else if lower_name.contains("bluetooth") || lower_name.contains("bluez") {
+            DeviceType::Bluetooth
+        } else if lower_name.contains("network") {
+            DeviceType::Network
+        } else if lower_name.contains("virtual")
+            || lower_name.contains("pipewire")
+            || lower_name.contains("jack")
+            || lower_name.contains("discard")
+        {
+            DeviceType::Virtual
+        } else if lower_name.contains("firewire") {
+            DeviceType::Firewire
+        } else {
+            DeviceType::Other
+        };
+
+        let max_input_channels = self
+            .inner
+            .supported_input_configs()
+            .map(|configs| configs.map(|c| c.channels()).max().unwrap_or(0))
+            .unwrap_or(0);
+
+        let max_output_channels = self
+            .inner
+            .supported_output_configs()
+            .map(|configs| configs.map(|c| c.channels()).max().unwrap_or(0))
+            .unwrap_or(0);
 
         Ok(DeviceDescription {
             name,
@@ -140,8 +164,10 @@ impl AudioDevice {
             } else {
                 DeviceDirection::Output
             },
-            device_type: DeviceType::Other,
-            interface_type: InterfaceType::Other,
+            device_type,
+            host_id: self.host_id,
+            max_input_channels,
+            max_output_channels,
         })
     }
 
@@ -221,111 +247,34 @@ impl AudioDevice {
 
         let sample_format = config.sample_format.into();
 
+        macro_rules! build_output {
+            ($t:ty) => {
+                self.inner.build_output_stream(
+                    &cpal_config,
+                    move |data: &mut [$t], _| {
+                        let mut buffer = shared_buffer.lock().unwrap();
+                        for frame in data.chunks_mut(channels) {
+                            let value = buffer.pop_front().unwrap_or(0.0);
+                            let sample = cpal::Sample::from_sample(value);
+                            for s in frame.iter_mut() {
+                                *s = sample;
+                            }
+                        }
+                    },
+                    err_fn,
+                    None,
+                )
+            };
+        }
+
         let stream = match sample_format {
-            cpal::SampleFormat::I8 => self.inner.build_output_stream(
-                &cpal_config,
-                move |data: &mut [i8], _| {
-                    let mut buffer = shared_buffer.lock().unwrap();
-                    for frame in data.chunks_mut(channels) {
-                        let value = buffer.pop_front().unwrap_or(0.0);
-                        let sample = cpal::Sample::from_sample(value);
-                        for s in frame.iter_mut() {
-                            *s = sample;
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            ),
-            cpal::SampleFormat::U8 => self.inner.build_output_stream(
-                &cpal_config,
-                move |data: &mut [u8], _| {
-                    let mut buffer = shared_buffer.lock().unwrap();
-                    for frame in data.chunks_mut(channels) {
-                        let value = buffer.pop_front().unwrap_or(0.0);
-                        let sample = cpal::Sample::from_sample(value);
-                        for s in frame.iter_mut() {
-                            *s = sample;
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            ),
-            cpal::SampleFormat::I16 => self.inner.build_output_stream(
-                &cpal_config,
-                move |data: &mut [i16], _| {
-                    let mut buffer = shared_buffer.lock().unwrap();
-                    for frame in data.chunks_mut(channels) {
-                        let value = buffer.pop_front().unwrap_or(0.0);
-                        let sample = cpal::Sample::from_sample(value);
-                        for s in frame.iter_mut() {
-                            *s = sample;
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            ),
-            cpal::SampleFormat::U16 => self.inner.build_output_stream(
-                &cpal_config,
-                move |data: &mut [u16], _| {
-                    let mut buffer = shared_buffer.lock().unwrap();
-                    for frame in data.chunks_mut(channels) {
-                        let value = buffer.pop_front().unwrap_or(0.0);
-                        let sample = cpal::Sample::from_sample(value);
-                        for s in frame.iter_mut() {
-                            *s = sample;
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            ),
-            cpal::SampleFormat::I32 => self.inner.build_output_stream(
-                &cpal_config,
-                move |data: &mut [i32], _| {
-                    let mut buffer = shared_buffer.lock().unwrap();
-                    for frame in data.chunks_mut(channels) {
-                        let value = buffer.pop_front().unwrap_or(0.0);
-                        let sample = cpal::Sample::from_sample(value);
-                        for s in frame.iter_mut() {
-                            *s = sample;
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            ),
-            cpal::SampleFormat::U32 => self.inner.build_output_stream(
-                &cpal_config,
-                move |data: &mut [u32], _| {
-                    let mut buffer = shared_buffer.lock().unwrap();
-                    for frame in data.chunks_mut(channels) {
-                        let value = buffer.pop_front().unwrap_or(0.0);
-                        let sample = cpal::Sample::from_sample(value);
-                        for s in frame.iter_mut() {
-                            *s = sample;
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            ),
-            cpal::SampleFormat::F32 => self.inner.build_output_stream(
-                &cpal_config,
-                move |data: &mut [f32], _| {
-                    let mut buffer = shared_buffer.lock().unwrap();
-                    for frame in data.chunks_mut(channels) {
-                        let value = buffer.pop_front().unwrap_or(0.0);
-                        for s in frame.iter_mut() {
-                            *s = value;
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            ),
+            cpal::SampleFormat::I8 => build_output!(i8),
+            cpal::SampleFormat::U8 => build_output!(u8),
+            cpal::SampleFormat::I16 => build_output!(i16),
+            cpal::SampleFormat::U16 => build_output!(u16),
+            cpal::SampleFormat::I32 => build_output!(i32),
+            cpal::SampleFormat::U32 => build_output!(u32),
+            cpal::SampleFormat::F32 => build_output!(f32),
             _ => {
                 return Err(Error::from_reason(format!(
                     "Unsupported sample format: {:?}",
@@ -356,98 +305,32 @@ impl AudioDevice {
 
         let sample_format = config.sample_format.into();
 
+        macro_rules! build_input {
+            ($t:ty) => {
+                self.inner.build_input_stream(
+                    &cpal_config,
+                    move |data: &[$t], _| {
+                        let mut buffer = shared_buffer.lock().unwrap();
+                        for frame in data.chunks(channels) {
+                            if let Some(sample) = frame.first() {
+                                buffer.push_back(cpal::Sample::to_sample::<f32>(*sample));
+                            }
+                        }
+                    },
+                    err_fn,
+                    None,
+                )
+            };
+        }
+
         let stream = match sample_format {
-            cpal::SampleFormat::I8 => self.inner.build_input_stream(
-                &cpal_config,
-                move |data: &[i8], _| {
-                    let mut buffer = shared_buffer.lock().unwrap();
-                    for frame in data.chunks(channels) {
-                        if let Some(sample) = frame.first() {
-                            buffer.push_back(cpal::Sample::to_sample::<f32>(*sample));
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            ),
-            cpal::SampleFormat::U8 => self.inner.build_input_stream(
-                &cpal_config,
-                move |data: &[u8], _| {
-                    let mut buffer = shared_buffer.lock().unwrap();
-                    for frame in data.chunks(channels) {
-                        if let Some(sample) = frame.first() {
-                            buffer.push_back(cpal::Sample::to_sample::<f32>(*sample));
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            ),
-            cpal::SampleFormat::I16 => self.inner.build_input_stream(
-                &cpal_config,
-                move |data: &[i16], _| {
-                    let mut buffer = shared_buffer.lock().unwrap();
-                    for frame in data.chunks(channels) {
-                        if let Some(sample) = frame.first() {
-                            buffer.push_back(cpal::Sample::to_sample::<f32>(*sample));
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            ),
-            cpal::SampleFormat::U16 => self.inner.build_input_stream(
-                &cpal_config,
-                move |data: &[u16], _| {
-                    let mut buffer = shared_buffer.lock().unwrap();
-                    for frame in data.chunks(channels) {
-                        if let Some(sample) = frame.first() {
-                            buffer.push_back(cpal::Sample::to_sample::<f32>(*sample));
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            ),
-            cpal::SampleFormat::I32 => self.inner.build_input_stream(
-                &cpal_config,
-                move |data: &[i32], _| {
-                    let mut buffer = shared_buffer.lock().unwrap();
-                    for frame in data.chunks(channels) {
-                        if let Some(sample) = frame.first() {
-                            buffer.push_back(cpal::Sample::to_sample::<f32>(*sample));
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            ),
-            cpal::SampleFormat::U32 => self.inner.build_input_stream(
-                &cpal_config,
-                move |data: &[u32], _| {
-                    let mut buffer = shared_buffer.lock().unwrap();
-                    for frame in data.chunks(channels) {
-                        if let Some(sample) = frame.first() {
-                            buffer.push_back(cpal::Sample::to_sample::<f32>(*sample));
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            ),
-            cpal::SampleFormat::F32 => self.inner.build_input_stream(
-                &cpal_config,
-                move |data: &[f32], _| {
-                    let mut buffer = shared_buffer.lock().unwrap();
-                    for frame in data.chunks(channels) {
-                        if let Some(sample) = frame.first() {
-                            buffer.push_back(*sample);
-                        }
-                    }
-                },
-                err_fn,
-                None,
-            ),
+            cpal::SampleFormat::I8 => build_input!(i8),
+            cpal::SampleFormat::U8 => build_input!(u8),
+            cpal::SampleFormat::I16 => build_input!(i16),
+            cpal::SampleFormat::U16 => build_input!(u16),
+            cpal::SampleFormat::I32 => build_input!(i32),
+            cpal::SampleFormat::U32 => build_input!(u32),
+            cpal::SampleFormat::F32 => build_input!(f32),
             _ => {
                 return Err(Error::from_reason(format!(
                     "Unsupported sample format: {:?}",

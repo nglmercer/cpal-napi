@@ -2,6 +2,26 @@ use crate::device::AudioDevice;
 use cpal::traits::HostTrait;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use std::os::raw::{c_char, c_int};
+
+#[cfg(target_os = "linux")]
+extern "C" {
+    fn snd_lib_error_set_handler(
+        handler: Option<
+            unsafe extern "C" fn(*const c_char, c_int, *const c_char, c_int, *const c_char),
+        >,
+    ) -> c_int;
+}
+
+#[cfg(target_os = "linux")]
+unsafe extern "C" fn silent_error_handler(
+    _file: *const c_char,
+    _line: c_int,
+    _function: *const c_char,
+    _err: c_int,
+    _fmt: *const c_char,
+) {
+}
 
 #[napi]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,48 +63,62 @@ impl AudioHost {
 
     #[napi]
     pub fn devices(&self) -> Result<Vec<AudioDevice>> {
+        let host_id = self.inner.id().into();
         let devices = self
             .inner
             .devices()
             .map_err(|e| Error::from_reason(format!("Failed to get devices: {}", e)))?;
-        Ok(devices.map(|d| AudioDevice { inner: d }).collect())
+        Ok(devices.map(|d| AudioDevice { inner: d, host_id }).collect())
     }
 
     #[napi]
     pub fn input_devices(&self) -> Result<Vec<AudioDevice>> {
+        let host_id = self.inner.id().into();
         let devices = self
             .inner
             .input_devices()
             .map_err(|e| Error::from_reason(format!("Failed to get input devices: {}", e)))?;
-        Ok(devices.map(|d| AudioDevice { inner: d }).collect())
+        Ok(devices.map(|d| AudioDevice { inner: d, host_id }).collect())
     }
 
     #[napi]
     pub fn output_devices(&self) -> Result<Vec<AudioDevice>> {
+        let host_id = self.inner.id().into();
         let devices = self
             .inner
             .output_devices()
             .map_err(|e| Error::from_reason(format!("Failed to get output devices: {}", e)))?;
-        Ok(devices.map(|d| AudioDevice { inner: d }).collect())
+        Ok(devices.map(|d| AudioDevice { inner: d, host_id }).collect())
     }
 
     #[napi]
     pub fn default_input_device(&self) -> Option<AudioDevice> {
+        let host_id = self.inner.id().into();
         self.inner
             .default_input_device()
-            .map(|d| AudioDevice { inner: d })
+            .map(|d| AudioDevice { inner: d, host_id })
     }
 
     #[napi]
     pub fn default_output_device(&self) -> Option<AudioDevice> {
+        let host_id = self.inner.id().into();
         self.inner
             .default_output_device()
-            .map(|d| AudioDevice { inner: d })
+            .map(|d| AudioDevice { inner: d, host_id })
+    }
+}
+
+#[napi]
+pub fn silence_host_logs() {
+    #[cfg(target_os = "linux")]
+    unsafe {
+        snd_lib_error_set_handler(Some(silent_error_handler));
     }
 }
 
 #[napi]
 pub fn get_default_host() -> AudioHost {
+    silence_host_logs();
     AudioHost {
         inner: cpal::default_host(),
     }

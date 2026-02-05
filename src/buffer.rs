@@ -26,20 +26,21 @@ impl AudioBuffer {
     #[napi]
     pub fn push(&self, data: Float32Array) {
         let mut buffer = self.inner.lock().unwrap();
-        for i in 0..data.len() {
-            buffer.push_back(data[i]);
-        }
+        buffer.extend(data.as_ref());
     }
 
     #[napi]
     pub fn beep(&self, frequency: f64, duration_ms: f64, sample_rate: f64) {
-        let mut buffer = self.inner.lock().unwrap();
         let num_samples = (sample_rate * (duration_ms / 1000.0)) as usize;
+        let mut samples = Vec::with_capacity(num_samples);
+        let pi2 = 2.0 * std::f64::consts::PI;
         for i in 0..num_samples {
             let t = i as f64 / sample_rate;
-            let sample = (t * frequency * 2.0 * std::f64::consts::PI).sin() as f32;
-            buffer.push_back(sample);
+            let sample = (t * frequency * pi2).sin() as f32;
+            samples.push(sample);
         }
+        let mut buffer = self.inner.lock().unwrap();
+        buffer.extend(samples);
     }
 
     #[napi]
