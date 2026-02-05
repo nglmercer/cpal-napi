@@ -57,10 +57,16 @@ mod tests {
             println!("Devices found: {}", devices.len());
             for (i, d) in devices.iter().enumerate() {
                 let name = d.name().unwrap_or_else(|_| "Unknown".to_string());
-                let id = d.id().map(|id| id.id).unwrap_or_else(|_| "Unknown".to_string());
+                let id = d
+                    .id()
+                    .map(|id| id.id)
+                    .unwrap_or_else(|_| "Unknown".to_string());
                 if let Ok(desc) = d.description() {
                     println!("{}. Name: {}", i + 1, name);
-                    println!("   Channels: {} in / {} out", desc.max_input_channels, desc.max_output_channels);
+                    println!(
+                        "   Channels: {} in / {} out",
+                        desc.max_input_channels, desc.max_output_channels
+                    );
                     println!("   ID: {}", id);
                 } else {
                     println!("{}. {} (Description failed)", i + 1, name);

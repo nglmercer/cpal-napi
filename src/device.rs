@@ -373,7 +373,9 @@ impl AudioDevice {
 
         let sample_format = config.sample_format.into();
         let noise_gate = config.noise_gate_threshold.map(|t| t as f32);
-        let mix_mode = config.mix_mode.unwrap_or(crate::config::ChannelMixMode::Auto);
+        let mix_mode = config
+            .mix_mode
+            .unwrap_or(crate::config::ChannelMixMode::Auto);
 
         macro_rules! build_input {
             ($t:ty) => {{
@@ -384,10 +386,10 @@ impl AudioDevice {
                 // Prepare dependencies for this specific closure instance
                 let tsfn_local = tsfn.clone();
                 let shared_buffer_local = shared_buffer.clone();
-                
+
                 // If mix_mode is Copy (Enum), this is a copy. If not, we might need a clone.
                 // Assuming Copy for now based on typical usage, but shadowing ensures we have a local binding.
-                let mix_mode_local = mix_mode; 
+                let mix_mode_local = mix_mode;
 
                 let err_fn_local = move |err: cpal::StreamError| {
                     let msg = err.to_string();
@@ -451,7 +453,7 @@ impl AudioDevice {
 
                                         let use_l;
                                         let use_r;
-                                        
+
                                         if l_active && !r_active {
                                             use_l = true;
                                             use_r = false;
@@ -504,7 +506,7 @@ impl AudioDevice {
                         // 3. Push
                         if let Ok(mut buffer) = shared_buffer_local.lock() {
                             buffer.extend(processed);
-                            
+
                             if buffer.len() > 44100 {
                                 let to_remove = buffer.len() - 22050; // Keep ~0.5s
                                 drop(buffer.drain(0..to_remove));
@@ -516,7 +518,6 @@ impl AudioDevice {
                 )
             }};
         }
-
 
         let stream = match sample_format {
             cpal::SampleFormat::I8 => build_input!(i8),
@@ -544,28 +545,33 @@ impl AudioDevice {
 
 #[cfg(target_os = "windows")]
 fn get_windows_friendly_name(device_id: &str) -> Option<String> {
-    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ};
+    use windows::Win32::Devices::FunctionDiscovery::{
+        PKEY_DeviceInterface_FriendlyName, PKEY_Device_DeviceDesc, PKEY_Device_FriendlyName,
+    };
     use windows::Win32::Foundation::RPC_E_CHANGED_MODE;
-    use windows::Win32::Media::Audio::{IMMDeviceEnumerator, MMDeviceEnumerator, IMMDevice};
+    use windows::Win32::Media::Audio::{IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator};
     use windows::Win32::System::Com::StructuredStorage::PropVariantToStringAlloc;
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ,
+    };
     use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, PROPERTYKEY};
-    use windows::Win32::Devices::FunctionDiscovery::{PKEY_Device_FriendlyName, PKEY_Device_DeviceDesc, PKEY_DeviceInterface_FriendlyName};
 
     unsafe {
         let hr = CoInitializeEx(None, COINIT_MULTITHREADED);
         if hr.is_err() && hr != RPC_E_CHANGED_MODE {
             return None;
         }
-        
-        let enumerator: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
-        
+
+        let enumerator: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
+
         // CPAL prepends host name to ID, e.g. "wasapi:{...}". Strip it for native API.
         let native_id = device_id.strip_prefix("wasapi:").unwrap_or(device_id);
-        
+
         let device_id_h = windows::core::HSTRING::from(native_id);
         let device: IMMDevice = enumerator.GetDevice(&device_id_h).ok()?;
         let store: IPropertyStore = device.OpenPropertyStore(STGM_READ).ok()?;
-        
+
         let get_prop = |key: &PROPERTYKEY| -> Option<String> {
             if let Ok(prop) = store.GetValue(key) {
                 if let Ok(ptr) = PropVariantToStringAlloc(&prop) {
@@ -579,9 +585,9 @@ fn get_windows_friendly_name(device_id: &str) -> Option<String> {
 
         // Standard Windows Audio properties
         let endpoint_name = get_prop(&PKEY_Device_FriendlyName); // e.g., "Microphone" or "Altavoces"
-        let hardware_name = get_prop(&PKEY_Device_DeviceDesc);   // e.g., "High Definition Audio Device"
+        let hardware_name = get_prop(&PKEY_Device_DeviceDesc); // e.g., "High Definition Audio Device"
         let interface_name = get_prop(&PKEY_DeviceInterface_FriendlyName);
-        
+
         // DEVPKEY_Device_Controller_FriendlyName: {b3f8fa76-5d97-4876-8f2d-052e35b1c906}, 2
         let controller_name = {
             let key = PROPERTYKEY {
@@ -593,7 +599,7 @@ fn get_windows_friendly_name(device_id: &str) -> Option<String> {
 
         // Attempt to find a more specific hardware name
         let mut best_hardware = hardware_name;
-        
+
         // DEVPKEY_Device_BusReportedDeviceDescription: {540b947e-8b40-45bc-a8a2-6a0b894cbda2}, 4
         let bus_desc = {
             let key = PROPERTYKEY {
@@ -619,15 +625,18 @@ fn get_windows_friendly_name(device_id: &str) -> Option<String> {
             (Some(e), Some(h)) => {
                 let e_lower = e.to_lowercase();
                 let h_lower = h.to_lowercase();
-                
-                if e_lower == h_lower { Some(e) }
-                else if e_lower.contains(&h_lower) { Some(e) }
-                else if h_lower.contains(&e_lower) { Some(h) }
-                else { 
+
+                if e_lower == h_lower {
+                    Some(e)
+                } else if e_lower.contains(&h_lower) {
+                    Some(e)
+                } else if h_lower.contains(&e_lower) {
+                    Some(h)
+                } else {
                     // Combine them if they are distinct
-                    Some(format!("{} ({})", e, h)) 
+                    Some(format!("{} ({})", e, h))
                 }
-            },
+            }
             (Some(e), None) => Some(e),
             (None, Some(h)) => Some(h),
             (None, None) => interface_name,
