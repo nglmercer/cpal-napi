@@ -41,8 +41,6 @@ export class AudioCable {
   }
 
   public stop(): void {
-    this.inputStream?.pause();
-    this.outputStream?.pause();
     this.inputStream?.close();
     this.outputStream?.close();
     this.inputStream = null;

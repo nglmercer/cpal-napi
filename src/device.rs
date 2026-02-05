@@ -1,6 +1,5 @@
 use crate::buffer::AudioBuffer;
 use crate::config::{StreamConfig, SupportedStreamConfig};
-use crate::host::StderrGag;
 use crate::stream::AudioStream;
 use cpal::traits::DeviceTrait;
 use napi::bindgen_prelude::*;
@@ -36,6 +35,7 @@ pub struct DeviceDescription {
     pub max_input_channels: u16,
     pub max_output_channels: u16,
     pub available: bool,
+    pub is_loopback: bool,
 }
 
 #[napi]
@@ -94,6 +94,7 @@ impl DeviceDescriptionBuilder {
             max_input_channels: 0,
             max_output_channels: 0,
             available: false,
+            is_loopback: false,
         }
     }
 }
@@ -129,7 +130,7 @@ impl AudioDevice {
 
     #[napi]
     pub fn description(&self) -> Result<DeviceDescription> {
-        let _gag = StderrGag::new();
+        // let _gag = StderrGag::new();
         let name = self.name().unwrap_or_else(|_| "Unknown".to_string());
         let lower_name = name.to_lowercase();
 
@@ -169,8 +170,21 @@ impl AudioDevice {
             (false, true) => DeviceDirection::Output,
             (false, false) => DeviceDirection::None,
         };
-
         let available = max_input_channels > 0 || max_output_channels > 0;
+
+        #[cfg(target_os = "windows")]
+        let is_loopback = {
+            if self.host_id == crate::host::HostId::Wasapi {
+                // In WASAPI, loopback is often indicated by being an output device
+                // used as an input source.
+                max_output_channels > 0
+            } else {
+                false
+            }
+        };
+
+        #[cfg(not(target_os = "windows"))]
+        let is_loopback = false;
 
         Ok(DeviceDescription {
             name,
@@ -180,6 +194,7 @@ impl AudioDevice {
             max_input_channels,
             max_output_channels,
             available,
+            is_loopback,
         })
     }
 
@@ -244,7 +259,7 @@ impl AudioDevice {
 
     #[napi]
     pub fn supported_output_configs(&self) -> Result<Vec<SupportedStreamConfig>> {
-        let _gag = StderrGag::new();
+        // let _gag = StderrGag::new();
         let configs = self.inner.supported_output_configs().map_err(|e| {
             Error::from_reason(format!("Failed to get supported output configs: {}", e))
         })?;
@@ -253,7 +268,7 @@ impl AudioDevice {
 
     #[napi]
     pub fn supported_input_configs(&self) -> Result<Vec<SupportedStreamConfig>> {
-        let _gag = StderrGag::new();
+        // let _gag = StderrGag::new();
         let configs = self.inner.supported_input_configs().map_err(|e| {
             Error::from_reason(format!("Failed to get supported input configs: {}", e))
         })?;
@@ -318,7 +333,13 @@ impl AudioDevice {
                 )))
             }
         }
-        .map_err(|e| Error::from_reason(format!("Failed to build output stream: {}", e)))?;
+        .map_err(|e| {
+            let name = self.name().unwrap_or_else(|_| "Unknown".to_string());
+            Error::from_reason(format!(
+                "Failed to build output stream on '{}': {}",
+                name, e
+            ))
+        })?;
 
         Ok(AudioStream::new(stream))
     }
@@ -379,7 +400,10 @@ impl AudioDevice {
                 )))
             }
         }
-        .map_err(|e| Error::from_reason(format!("Failed to build input stream: {}", e)))?;
+        .map_err(|e| {
+            let name = self.name().unwrap_or_else(|_| "Unknown".to_string());
+            Error::from_reason(format!("Failed to build input stream on '{}': {}", name, e))
+        })?;
 
         Ok(AudioStream::new(stream))
     }

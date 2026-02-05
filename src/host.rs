@@ -5,15 +5,6 @@ use napi_derive::napi;
 use std::os::raw::{c_char, c_int};
 
 #[cfg(target_os = "linux")]
-extern "C" {
-    fn snd_lib_error_set_handler(
-        handler: Option<
-            unsafe extern "C" fn(*const c_char, c_int, *const c_char, c_int, *const c_char),
-        >,
-    ) -> c_int;
-}
-
-#[cfg(target_os = "linux")]
 static GAG_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(target_os = "linux")]
@@ -74,16 +65,6 @@ impl Default for StderrGag {
     fn default() -> Self {
         Self::new()
     }
-}
-
-#[cfg(target_os = "linux")]
-unsafe extern "C" fn silent_error_handler(
-    _file: *const c_char,
-    _line: c_int,
-    _function: *const c_char,
-    _err: c_int,
-    _fmt: *const c_char,
-) {
 }
 
 #[napi]
@@ -178,23 +159,24 @@ pub fn silence_host_logs() {
         static ONCE: std::sync::Once = std::sync::Once::new();
         ONCE.call_once(|| {
             // Prevent JACK from trying to start a server when probing
+            // We use libc::setenv if we can, but std::env::set_var is what Rust provides.
+            // We do this once at the very beginning.
             std::env::set_var("JACK_NO_START_SERVER", "1");
-            // Some distributions use these
             std::env::set_var("JACK_START_SERVER", "0");
-            // Enable ALSA thread safety to prevent double-frees/corruption
-            // This MUST be set before any ALSA function is called.
             std::env::set_var("LIBASOUND_THREAD_SAFE", "1");
-
-            unsafe {
-                snd_lib_error_set_handler(Some(silent_error_handler));
-            }
         });
     }
 }
 
+#[cfg(target_os = "linux")]
+#[ctor::ctor]
+fn init() {
+    // Call it early to set env vars before ALSA/JACK are initialized
+    silence_host_logs();
+}
+
 #[napi]
 pub fn get_default_host() -> AudioHost {
-    silence_host_logs();
     AudioHost {
         inner: cpal::default_host(),
     }
@@ -202,7 +184,6 @@ pub fn get_default_host() -> AudioHost {
 
 #[napi]
 pub fn host_from_id(id: HostId) -> Result<AudioHost> {
-    silence_host_logs();
     let cpal_id = match id {
         #[cfg(target_os = "linux")]
         HostId::Alsa => Some(cpal::HostId::Alsa),
@@ -243,7 +224,6 @@ pub fn host_from_id(id: HostId) -> Result<AudioHost> {
 
 #[napi]
 pub fn available_hosts() -> Vec<String> {
-    silence_host_logs();
     cpal::available_hosts()
         .iter()
         .map(|h| h.name().to_string())
@@ -252,7 +232,6 @@ pub fn available_hosts() -> Vec<String> {
 
 #[napi]
 pub fn get_all_hosts() -> Vec<HostId> {
-    silence_host_logs();
     vec![
         HostId::Alsa,
         HostId::Jack,

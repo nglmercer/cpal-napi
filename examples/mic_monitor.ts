@@ -43,10 +43,10 @@ async function main() {
     cable.stop();
     
     console.log("Cleanup complete. Exiting...");
-    // Give native threads a tiny bit of time to settle before process exit
+    // Give native threads a bit more time to settle before process exit
     setTimeout(() => {
        process.exit(0);
-    }, 100);
+    }, 500);
   });
 
   // Visualization
