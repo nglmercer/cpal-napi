@@ -559,7 +559,10 @@ fn get_windows_friendly_name(device_id: &str) -> Option<String> {
         
         let enumerator: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
         
-        let device_id_h = windows::core::HSTRING::from(device_id);
+        // CPAL prepends host name to ID, e.g. "wasapi:{...}". Strip it for native API.
+        let native_id = device_id.strip_prefix("wasapi:").unwrap_or(device_id);
+        
+        let device_id_h = windows::core::HSTRING::from(native_id);
         let device: IMMDevice = enumerator.GetDevice(&device_id_h).ok()?;
         let store: IPropertyStore = device.OpenPropertyStore(STGM_READ).ok()?;
         
@@ -578,12 +581,20 @@ fn get_windows_friendly_name(device_id: &str) -> Option<String> {
         let endpoint_name = get_prop(&PKEY_Device_FriendlyName); // e.g., "Microphone" or "Altavoces"
         let hardware_name = get_prop(&PKEY_Device_DeviceDesc);   // e.g., "High Definition Audio Device"
         let interface_name = get_prop(&PKEY_DeviceInterface_FriendlyName);
+        
+        // DEVPKEY_Device_Controller_FriendlyName: {b3f8fa76-5d97-4876-8f2d-052e35b1c906}, 2
+        let controller_name = {
+            let key = PROPERTYKEY {
+                fmtid: windows::core::GUID::from_u128(0xb3f8fa76_5d97_4876_8f2d_052e35b1c906),
+                pid: 2,
+            };
+            get_prop(&key)
+        };
 
-        // Attempt to find a more specific hardware name if DeviceDesc is generic
+        // Attempt to find a more specific hardware name
         let mut best_hardware = hardware_name;
         
         // DEVPKEY_Device_BusReportedDeviceDescription: {540b947e-8b40-45bc-a8a2-6a0b894cbda2}, 4
-        // Usually contains the manufacturer-reported model name (e.g., "Comica_ADCaster C1")
         let bus_desc = {
             let key = PROPERTYKEY {
                 fmtid: windows::core::GUID::from_u128(0x540b947e_8b40_45bc_a8a2_6a0b894cbda2),
@@ -592,22 +603,26 @@ fn get_windows_friendly_name(device_id: &str) -> Option<String> {
             get_prop(&key)
         };
 
-        if let Some(ref b) = bus_desc {
-            if let Some(ref h) = best_hardware {
-                // If bus_desc is more specific than current hardware_name, use it.
-                if b.len() > h.len() {
-                     best_hardware = Some(b.clone());
+        for name in [bus_desc, controller_name] {
+            if let Some(n) = name {
+                if let Some(ref current) = best_hardware {
+                    if n.len() > current.len() {
+                        best_hardware = Some(n);
+                    }
+                } else {
+                    best_hardware = Some(n);
                 }
-            } else {
-                best_hardware = Some(b.clone());
             }
         }
 
         match (endpoint_name, best_hardware) {
             (Some(e), Some(h)) => {
-                if e == h { Some(e) }
-                else if e.contains(&h) { Some(e) }
-                else if h.contains(&e) { Some(h) }
+                let e_lower = e.to_lowercase();
+                let h_lower = h.to_lowercase();
+                
+                if e_lower == h_lower { Some(e) }
+                else if e_lower.contains(&h_lower) { Some(e) }
+                else if h_lower.contains(&e_lower) { Some(h) }
                 else { 
                     // Combine them if they are distinct
                     Some(format!("{} ({})", e, h)) 
