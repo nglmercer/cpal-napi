@@ -2,7 +2,7 @@ use crate::device::AudioDevice;
 use cpal::traits::HostTrait;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use std::os::raw::{c_char, c_int};
+use std::os::raw::c_char;
 
 #[cfg(target_os = "linux")]
 static GAG_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());

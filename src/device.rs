@@ -3,6 +3,8 @@ use crate::config::{StreamConfig, SupportedStreamConfig};
 use crate::stream::AudioStream;
 use cpal::traits::DeviceTrait;
 use napi::bindgen_prelude::*;
+
+use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use napi_derive::napi;
 
 #[napi]
@@ -171,20 +173,20 @@ impl AudioDevice {
             (false, false) => DeviceDirection::None,
         };
         let available = max_input_channels > 0 || max_output_channels > 0;
-
-        #[cfg(target_os = "windows")]
         let is_loopback = {
-            if self.host_id == crate::host::HostId::Wasapi {
-                // In WASAPI, loopback is often indicated by being an output device
-                // used as an input source.
-                max_output_channels > 0
-            } else {
+            #[cfg(target_os = "windows")]
+            {
+                if self.host_id == crate::host::HostId::Wasapi {
+                    max_output_channels > 0
+                } else {
+                    false
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
                 false
             }
         };
-
-        #[cfg(not(target_os = "windows"))]
-        let is_loopback = false;
 
         Ok(DeviceDescription {
             name,
@@ -280,6 +282,7 @@ impl AudioDevice {
         &self,
         config: StreamConfig,
         buffer: &AudioBuffer,
+        #[napi(ts_arg_type = "(err: string) => void")] error_callback: Option<Function<(String,), ()>>,
     ) -> Result<AudioStream> {
         let cpal_config = cpal::StreamConfig {
             channels: config.channels,
@@ -289,10 +292,25 @@ impl AudioDevice {
 
         let channels = config.channels as usize;
         let shared_buffer = buffer.inner.clone();
-        let err_fn = |err: cpal::StreamError| {
+
+        let tsfn = if let Some(cb) = error_callback {
+            let f = cb.build_threadsafe_function::<String>()
+                .callee_handled::<true>()
+                .build_callback(|ctx| {
+                    Ok((ctx.value.clone(),))
+                })?;
+            Some(f)
+        } else {
+            None
+        };
+
+        let err_fn = move |err: cpal::StreamError| {
             let msg = err.to_string();
+            if let Some(ref f) = tsfn {
+                let _ = f.call(Ok(msg.clone()), ThreadsafeFunctionCallMode::NonBlocking);
+            }
             if !msg.contains("underrun") && !msg.contains("overrun") {
-                eprintln!("an error occurred on stream: {}", err);
+                crate::logger::log(&format!("an error occurred on stream: {}", err));
             }
         };
 
@@ -349,6 +367,7 @@ impl AudioDevice {
         &self,
         config: StreamConfig,
         buffer: &AudioBuffer,
+        #[napi(ts_arg_type = "(err: string) => void")] error_callback: Option<Function<(String,), ()>>,
     ) -> Result<AudioStream> {
         let cpal_config = cpal::StreamConfig {
             channels: config.channels,
@@ -358,10 +377,25 @@ impl AudioDevice {
 
         let channels = config.channels as usize;
         let shared_buffer = buffer.inner.clone();
-        let err_fn = |err: cpal::StreamError| {
+
+        let tsfn = if let Some(cb) = error_callback {
+            let f = cb.build_threadsafe_function::<String>()
+                .callee_handled::<true>()
+                .build_callback(|ctx| {
+                    Ok((ctx.value.clone(),))
+                })?;
+            Some(f)
+        } else {
+            None
+        };
+
+        let err_fn = move |err: cpal::StreamError| {
             let msg = err.to_string();
+            if let Some(ref f) = tsfn {
+                let _ = f.call(Ok(msg.clone()), ThreadsafeFunctionCallMode::NonBlocking);
+            }
             if !msg.contains("underrun") && !msg.contains("overrun") {
-                eprintln!("an error occurred on stream: {}", err);
+                crate::logger::log(&format!("an error occurred on stream: {}", err));
             }
         };
 

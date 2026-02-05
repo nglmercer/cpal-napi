@@ -3,6 +3,7 @@ pub mod config;
 pub mod device;
 pub mod error;
 pub mod host;
+pub mod logger;
 pub mod stream;
 pub mod types;
 
@@ -13,6 +14,7 @@ pub use error::*;
 pub use host::*;
 pub use stream::*;
 pub use types::*;
+pub use logger::set_debug;
 
 #[cfg(test)]
 mod tests {

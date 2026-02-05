@@ -1,5 +1,6 @@
 use cpal::traits::StreamTrait;
 use napi::bindgen_prelude::*;
+
 use napi_derive::napi;
 
 #[napi(object)]
@@ -32,7 +33,7 @@ pub struct OutputCallbackInfo {
 
 #[napi]
 pub struct AudioStream {
-    stream: Option<cpal::Stream>,
+    pub(crate) stream: Option<cpal::Stream>,
 }
 
 impl AudioStream {
@@ -68,6 +69,7 @@ impl AudioStream {
     #[napi]
     pub fn close(&mut self) {
         if let Some(s) = self.stream.take() {
+            let _ = s.pause();
             drop(s);
         }
     }
@@ -77,6 +79,7 @@ impl Drop for AudioStream {
     fn drop(&mut self) {
         // Ensure stream is stopped and resources are freed when the object is GC'd
         if let Some(s) = self.stream.take() {
+            let _ = s.pause();
             drop(s);
         }
     }
