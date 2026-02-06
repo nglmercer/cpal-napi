@@ -112,8 +112,22 @@ impl AudioDevice {
 
     #[napi]
     pub fn description(&self) -> Result<DeviceDescription> {
-        let _gag = StderrGag::maybe_gag();
-        let name = self.name().unwrap_or_else(|_| "Unknown".to_string());
+        let mut name = "Unknown".to_string();
+        let mut is_loopback_prop = false;
+
+        #[cfg(target_os = "windows")]
+        if self.host_id == crate::host::HostId::Wasapi {
+            if let Ok(id_obj) = self.id() {
+                if let Some((better, lp)) = get_windows_friendly_name(&id_obj.id) {
+                    name = better;
+                    is_loopback_prop = lp;
+                }
+            }
+        }
+
+        if name == "Unknown" {
+            name = self.name().unwrap_or_else(|_| "Unknown".to_string());
+        }
 
         let max_input_channels = self
             .inner
@@ -134,13 +148,14 @@ impl AudioDevice {
             (false, false) => DeviceDirection::None,
         };
         let available = max_input_channels > 0 || max_output_channels > 0;
+
+        // Final loopback decision
         let is_loopback = {
             #[cfg(target_os = "windows")]
             {
                 if self.host_id == crate::host::HostId::Wasapi {
-                    // In WASAPI, loopback devices are input devices that capture output.
-                    // CPAL explicitly includes "Loopback" in their names.
-                    max_input_channels > 0 && name.to_lowercase().contains("loopback")
+                    // Use property-based detection primarily
+                    is_loopback_prop || name.to_lowercase().contains("loopback")
                 } else {
                     false
                 }
@@ -151,11 +166,19 @@ impl AudioDevice {
             }
         };
 
+        // If it's a loopback on Windows, it might not report input channels yet,
+        // but it will support them (matching output channels).
+        let effective_max_input = if is_loopback && max_input_channels == 0 {
+            max_output_channels.max(2)
+        } else {
+            max_input_channels
+        };
+
         Ok(DeviceDescription {
             name,
             direction,
             host_id: self.host_id,
-            max_input_channels,
+            max_input_channels: effective_max_input,
             max_output_channels,
             available,
             is_loopback,
@@ -211,7 +234,18 @@ impl AudioDevice {
         {
             if self.host_id == crate::host::HostId::Wasapi {
                 if let Ok(id_obj) = self.id() {
-                    if let Some(better) = get_windows_friendly_name(&id_obj.id) {
+                    let cpal_name = self
+                        .inner
+                        .description()
+                        .map(|d| d.name().to_string())
+                        .unwrap_or_default();
+                    if let Some((better, _)) = get_windows_friendly_name(&id_obj.id) {
+                        // Preserve the "(Loopback)" suffix if CPAL added it
+                        if cpal_name.to_lowercase().contains("loopback")
+                            && !better.to_lowercase().contains("loopback")
+                        {
+                            return Ok(format!("{} (Loopback)", better));
+                        }
                         return Ok(better);
                     }
                 }
@@ -544,12 +578,15 @@ impl AudioDevice {
 }
 
 #[cfg(target_os = "windows")]
-fn get_windows_friendly_name(device_id: &str) -> Option<String> {
+fn get_windows_friendly_name(device_id: &str) -> Option<(String, bool)> {
+    use windows::core::Interface;
     use windows::Win32::Devices::FunctionDiscovery::{
         PKEY_DeviceInterface_FriendlyName, PKEY_Device_DeviceDesc, PKEY_Device_FriendlyName,
     };
     use windows::Win32::Foundation::RPC_E_CHANGED_MODE;
-    use windows::Win32::Media::Audio::{IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator};
+    use windows::Win32::Media::Audio::{
+        eRender, IMMDevice, IMMDeviceEnumerator, IMMEndpoint, MMDeviceEnumerator,
+    };
     use windows::Win32::System::Com::StructuredStorage::PropVariantToStringAlloc;
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ,
@@ -570,6 +607,18 @@ fn get_windows_friendly_name(device_id: &str) -> Option<String> {
 
         let device_id_h = windows::core::HSTRING::from(native_id);
         let device: IMMDevice = enumerator.GetDevice(&device_id_h).ok()?;
+
+        // Detect if this is a render endpoint (eRender) or capture (eCapture)
+        // If we are looking at this device in the context of an "Input" list but it is eRender,
+        // then it is a WASAPI loopback device.
+        let is_loopback = (|| {
+            let endpoint: IMMEndpoint = device.cast().ok()?;
+            let flow = endpoint.GetDataFlow().ok()?;
+            // eRender = 0. This flow on a "Capture" context means Loopback.
+            Some(flow == eRender)
+        })()
+        .unwrap_or(false);
+
         let store: IPropertyStore = device.OpenPropertyStore(STGM_READ).ok()?;
 
         let get_prop = |key: &PROPERTYKEY| -> Option<String> {
@@ -619,7 +668,7 @@ fn get_windows_friendly_name(device_id: &str) -> Option<String> {
             }
         }
 
-        match (endpoint_name, best_hardware) {
+        let final_name = match (endpoint_name, best_hardware) {
             (Some(e), Some(h)) => {
                 let e_lower = e.to_lowercase();
                 let h_lower = h.to_lowercase();
@@ -636,6 +685,8 @@ fn get_windows_friendly_name(device_id: &str) -> Option<String> {
             (Some(e), None) => Some(e),
             (None, Some(h)) => Some(h),
             (None, None) => interface_name,
-        }
+        }?;
+
+        Some((final_name, is_loopback))
     }
 }
